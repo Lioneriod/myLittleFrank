@@ -1,9 +1,22 @@
-import { Text, View } from "react-native";
+import React from "react";
+import { ImageBackground, StyleSheet, useWindowDimensions } from "react-native";
 
-export default function Booking() {
+export default function Closet() {
+  const { width, height } = useWindowDimensions();
+
   return (
-    <View>
-      <Text>Booking</Text>
-    </View>
+    <ImageBackground
+      source={require("../assets/telaArmario.jpg")}
+      style={[styles.background, { width, height }]}
+      resizeMode="stretch"
+    />
   );
 }
+
+const styles = StyleSheet.create({
+  background: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+  },
+});
