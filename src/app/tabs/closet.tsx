@@ -1,12 +1,12 @@
 import React from "react";
 import { ImageBackground, StyleSheet, useWindowDimensions } from "react-native";
 
-export default function Home() {
+export default function Closet() {
   const { width, height } = useWindowDimensions();
 
   return (
     <ImageBackground
-      source={require("../assets/telaPrincipal.jpg")}
+      source={require("../assets/telaArmario.jpg")}
       style={[styles.background, { width, height }]}
       resizeMode="stretch"
     />
