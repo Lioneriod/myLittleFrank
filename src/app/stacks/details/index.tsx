@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import {
   MapPin,
   Star,
@@ -18,9 +18,7 @@ export default function Details() {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollViewContent}>
-        <View style={styles.headerImageContainer}>
-          <Image source={require("../../assets/hotel.png")} style={styles.headerImage} />
-        </View>
+        <View style={styles.headerImageContainer} />
 
         <View style={styles.sectionPadding}>
           <Text style={styles.hotelName}>Royale President Hotel</Text>
@@ -43,9 +41,9 @@ export default function Details() {
             showsHorizontalScrollIndicator={false}
             style={styles.galleryScrollView}
           >
-            <Image source={require("../../assets/hotel.png")} style={styles.galleryImage} />
-            <Image source={require("../../assets/hotel.png")} style={styles.galleryImage} />
-            <Image source={require("../../assets/hotel.png")} style={styles.galleryImage} />
+            <View style={styles.galleryImage} />
+            <View style={styles.galleryImage} />
+            <View style={styles.galleryImage} />
             {/* Add more gallery images */}
           </ScrollView>
         </View>
@@ -131,7 +129,7 @@ export default function Details() {
           {/* Individual Reviews */}
           <View style={styles.reviewCard}>
             <View style={styles.reviewHeader}>
-              <Image source={require("../../assets/hotel.png")} style={styles.reviewerAvatar} />
+              <View style={styles.reviewerAvatar} />
               <View>
                 <Text style={styles.reviewerName}>Jenny Wilson</Text>
                 <Text style={styles.reviewDate}>Sept 12, 2024</Text>
@@ -147,7 +145,7 @@ export default function Details() {
 
           <View style={styles.reviewCard}>
             <View style={styles.reviewHeader}>
-              <Image source={require("../../assets/hotel.png")} style={styles.reviewerAvatar} />
+              <View style={styles.reviewerAvatar} />
               <View>
                 <Text style={styles.reviewerName}>Guy Hawkins</Text>
                 <Text style={styles.reviewDate}>Sept 10, 2024</Text>
@@ -163,7 +161,7 @@ export default function Details() {
 
           <View style={styles.reviewCard}>
             <View style={styles.reviewHeader}>
-              <Image source={require("../../assets/hotel.png")} style={styles.reviewerAvatar} />
+              <View style={styles.reviewerAvatar} />
               <View>
                 <Text style={styles.reviewerName}>Kristin Watson</Text>
                 <Text style={styles.reviewDate}>Sept 08, 2024</Text>
