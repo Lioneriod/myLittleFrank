@@ -6,7 +6,7 @@ export default function Games() {
 
   return (
     <ImageBackground
-      source={require("../assets/telaJogos.jpg")}
+      source={require("../assets/bgs/telaJogos.jpg")}
       style={[styles.background, { width, height }]}
       resizeMode="stretch"
     />
