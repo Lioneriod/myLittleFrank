@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const TAB_NAV_IMAGE = require("../assets/tabNav.jpg");
+const TAB_NAV_IMAGE = require("../assets/bgs/tabNav.jpg");
 const IMAGE_WIDTH = 1200;
 const IMAGE_HEIGHT = 257;
 const IMAGE_BACKGROUND_COLOR = "#C7DCC9";

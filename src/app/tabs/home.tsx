@@ -6,7 +6,7 @@ export default function Home() {
 
   return (
     <ImageBackground
-      source={require("../assets/telaPrincipal.jpg")}
+      source={require("../assets/bgs/telaPrincipal.jpg")}
       style={[styles.background, { width, height }]}
       resizeMode="stretch"
     />

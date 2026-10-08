@@ -6,7 +6,7 @@ export default function Closet() {
 
   return (
     <ImageBackground
-      source={require("../assets/telaArmario.jpg")}
+      source={require("../assets/bgs/telaArmario.jpg")}
       style={[styles.background, { width, height }]}
       resizeMode="stretch"
     />
