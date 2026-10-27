@@ -1,4 +1,5 @@
 {
-  "gitConfigUser.selectedProfile": "Me",
-  "cSpell.words": ["Helia", "Supabase"]
+  "gitConfigUser.selectedProfile": "lioneriod",
+  "cSpell.words": ["Helia", "Supabase"],
+  "js/ts.tsdk.path": "node_modules\\typescript\\lib"
 }
