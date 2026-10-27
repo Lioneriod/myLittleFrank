@@ -1,163 +1,275 @@
-import React, { useState } from "react";
-import { View, Text, Image, TouchableOpacity, Switch, ScrollView, StyleSheet } from "react-native";
+import React, { useEffect, useState } from "react";
 import {
-  PencilSimple,
-  CreditCard,
-  Bell,
-  ShieldCheck,
-  Info,
-  Eye,
-  SignOut,
-  DotsThreeCircle,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  CaretRight,
   ChatsTeardrop,
+  DotsThreeCircle,
+  Eye,
+  PencilSimple,
+  SignOut,
+  User,
 } from "phosphor-react-native";
-import ProfileOption from "../components/ProfileOption";
+import { ChalkLine } from "../../components/Chalk";
+import { colors } from "../../theme";
+// Ajuste o caminho para onde o seu client do Supabase está exportado.
+import { supabase } from "../../lib/supabase";
+
+// Nome ainda é placeholder; o e-mail agora vem do Supabase.
+const PLACEHOLDER_USER = {
+  name: "Nome",
+};
+
+type ProfileRowProps = {
+  icon: React.ReactNode;
+  label: string;
+  onPress: () => void;
+};
+
+function ProfileRow({ icon, label, onPress }: ProfileRowProps) {
+  return (
+    <TouchableOpacity
+      accessibilityRole="button"
+      onPress={onPress}
+      style={styles.row}
+    >
+      <View style={styles.rowLeft}>
+        <View style={styles.iconBox}>{icon}</View>
+        <Text style={styles.rowLabel}>{label}</Text>
+      </View>
+      <CaretRight size={18} color={colors.ink} weight="bold" />
+    </TouchableOpacity>
+  );
+}
 
 export default function Profile() {
-  const [darkTheme, setDarkTheme] = useState(true);
+  const insets = useSafeAreaInsets();
+  const [email, setEmail] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    // Busca inicial do usuário autenticado.
+    supabase.auth.getUser().then(({ data }) => {
+      if (isMounted) {
+        setEmail(data.user?.email ?? null);
+      }
+    });
+
+    // Mantém o e-mail sincronizado com login/logout/refresh.
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setEmail(session?.user?.email ?? null);
+      }
+    );
+
+    return () => {
+      isMounted = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleLogOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+
+    const { error } = await supabase.auth.signOut();
+
+    // O onAuthStateChange acima já vai zerar o email quando a sessão cair.
+    if (error) {
+      console.warn("Falha ao sair:", error.message);
+      setSigningOut(false);
+    }
+  };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.headerProfile}>
-        <View style={styles.headerProfileIcon}>
-          <ChatsTeardrop size={30} color="#1ab65c" weight="duotone" />
-          <Text style={{ color: "#fff", fontSize: 20, fontWeight: "bold" }}>Profile</Text>
-        </View>
-
-        <TouchableOpacity onPress={() => {}}>
-          <DotsThreeCircle size={24} color="#fff" weight="bold" />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.profileContainer}>
-        <View>
-          <Image source={{ uri: "https://github.com/Rodrigo322.png" }} style={styles.avatar} />
-          <TouchableOpacity style={styles.editIcon}>
-            <PencilSimple size={16} color="white" weight="bold" />
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.name}>Rodrigo Lucas</Text>
-        <Text style={styles.email}>rodrigo@gmail.com</Text>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.optionsContainer}>
-        <ProfileOption
-          icon={<PencilSimple size={20} color="#fff" />}
-          label="Edit Profile"
-          onPress={() => {}}
-        />
-        <ProfileOption
-          icon={<CreditCard size={20} color="#fff" />}
-          label="Payment"
-          onPress={() => {}}
-        />
-        <ProfileOption
-          icon={<Bell size={20} color="#fff" />}
-          label="Notifications"
-          onPress={() => {}}
-        />
-        <ProfileOption
-          icon={<ShieldCheck size={20} color="#fff" />}
-          label="Security"
-          onPress={() => {}}
-        />
-        <ProfileOption icon={<Info size={20} color="#fff" />} label="Help" onPress={() => {}} />
-
-        <View style={styles.optionRow}>
-          <View style={styles.optionLeft}>
-            <Eye size={20} color="#fff" />
-            <Text style={styles.optionLabel}>Dark Theme</Text>
+    <View style={styles.screen}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 32 },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <View style={styles.headerRow}>
+            <View style={styles.headerTitle}>
+              {/* <ChatsTeardrop size={28} color={colors.accent} weight="duotone" /> */}
+              <Text style={styles.title}>Perfil</Text>
+            </View>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="More options"
+              hitSlop={12}
+              onPress={() => {}}
+            >
+              <DotsThreeCircle size={26} color={colors.ink} weight="bold" />
+            </TouchableOpacity>
           </View>
-          <Switch
-            value={darkTheme}
-            onValueChange={() => setDarkTheme(!darkTheme)}
-            trackColor={{ false: "#767577", true: "#34D399" }}
-            thumbColor="#fff"
+          {/* <ChalkLine /> */}
+        </View>
+
+        <View style={styles.profileInfo}>
+          <View style={styles.avatarWrap}>
+            <View style={styles.avatarPlaceholder}>
+              <User size={44} color={colors.ink} weight="duotone" />
+            </View>
+            {/* <TouchableOpacity
+              style={styles.editIcon}
+              accessibilityRole="button"
+              accessibilityLabel="Edit avatar"
+              onPress={() => {}}
+            >
+              <PencilSimple size={14} color={colors.paper} weight="bold" />
+            </TouchableOpacity> */}
+          </View>
+          <Text style={styles.name}>{PLACEHOLDER_USER.name}</Text>
+          <Text style={styles.email}>{email ?? ""}</Text>
+        </View>
+
+        {/* <ChalkLine /> */}
+
+        <View style={styles.options}>
+          <ProfileRow
+            icon={<PencilSimple size={18} color={colors.ink} weight="bold" />}
+            label="Editar Perfil"
+            onPress={() => {}}
+          />
+
+          {/* <ChalkLine /> */}
+
+          {/* <View style={styles.row}>
+            <View style={styles.rowLeft}>
+              <View style={styles.iconBox}>
+                <Eye size={18} color={colors.ink} weight="bold" />
+              </View>
+              <Text style={styles.rowLabel}>Dark Theme</Text>
+            </View>
+            <Switch
+              value={darkTheme}
+              onValueChange={() => setDarkTheme(!darkTheme)}
+              trackColor={{ false: colors.muted, true: colors.accent }}
+              thumbColor={colors.paper}
+              ios_backgroundColor={colors.muted}
+            />
+          </View> */}
+
+          <ProfileRow
+            icon={<SignOut size={18} color={colors.accent} weight="bold" />}
+            label="Log Out"
+            onPress={handleLogOut}
           />
         </View>
-
-        <TouchableOpacity style={styles.logoutRow} onPress={() => {}}>
-          <SignOut size={20} color="red" />
-          <Text style={styles.logoutLabel}>Logout</Text>
-        </TouchableOpacity>
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: "#111827",
-    paddingTop: 60,
-    paddingHorizontal: 20,
+    backgroundColor: colors.background,
   },
-  headerProfile: {
+  content: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    gap: 24,
+  },
+  header: {
+    gap: 10,
+  },
+  headerRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 24,
   },
-  headerProfileIcon: {
+  headerTitle: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
-  profileContainer: {
-    alignItems: "center",
-    marginBottom: 24,
+  title: {
+    color: colors.ink,
+    fontSize: 32,
+    fontWeight: "800",
   },
-  avatar: {
+  profileInfo: {
+    alignItems: "center",
+    gap: 4,
+  },
+  avatarWrap: {
+    position: "relative",
+  },
+  avatarPlaceholder: {
     width: 96,
     height: 96,
     borderRadius: 48,
+    borderWidth: 3,
+    borderColor: colors.ink,
+    alignItems: "center",
+    justifyContent: "center",
   },
   editIcon: {
     position: "absolute",
-    bottom: 0,
-    right: 0,
-    backgroundColor: "#34D399",
-    padding: 6,
-    borderRadius: 12,
+    bottom: -2,
+    right: -2,
+    backgroundColor: colors.accent,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    borderRadius: 8,
+    padding: 5,
   },
   name: {
-    color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "bold",
+    color: colors.ink,
+    fontSize: 22,
+    fontWeight: "900",
     marginTop: 12,
+    textAlign: "center",
   },
   email: {
-    color: "#A1A1AA",
-    fontSize: 14,
+    color: colors.muted,
+    fontSize: 15,
+    fontWeight: "700",
+    textAlign: "center",
   },
-  optionsContainer: {
-    paddingBottom: 80,
+  options: {
+    gap: 12,
+    // Empurra o bloco para o final da tela.
+    marginTop: "auto",
   },
-  optionRow: {
+  row: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#2D2D2D",
+    paddingVertical: 12,
+    gap: 12,
   },
-  optionLeft: {
+  rowLeft: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 12,
+    flexShrink: 1,
   },
-  optionLabel: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    marginLeft: 12,
-  },
-  logoutRow: {
-    flexDirection: "row",
+  iconBox: {
+    width: 34,
+    height: 34,
     alignItems: "center",
-    marginTop: 24,
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: colors.ink,
+    borderRadius: 4,
   },
-  logoutLabel: {
-    color: "red",
+  rowLabel: {
+    color: colors.ink,
     fontSize: 16,
-    marginLeft: 12,
+    fontWeight: "800",
   },
 });
