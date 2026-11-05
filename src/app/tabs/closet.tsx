@@ -20,13 +20,40 @@ const CLOSET_RECT_ORIG = { x: 68, y: 184, w: 484, h: 944 } as const;
 
 const BACKGROUND = require("../assets/bgs/telaArmario.jpg");
 
-const GRID_COLS = 4;
-const GRID_ROWS = 4;
-const TOTAL_SLOTS = GRID_COLS * GRID_ROWS; // 32
+const TOTAL_SLOTS = 9; // 32
+
+/**
+ * Per-category preview config for the closet grid.
+ *
+ * Every sprite is laid out on the same 624×832 canvas, but the *visible*
+ * content only occupies a slice of it (hats ≈ full height, tops ≈ upper-middle,
+ * bottoms ≈ lower half). The grid clips whatever overflows `cellInner`, so each
+ * category needs its own zoom + vertical compensation to make its visible
+ * region fill / centre in the cell.
+ *
+ *   scale         — zoom on top of the shared 200% baseline (`styles.cellImage`).
+ *   shiftUpRatio  — move the sprite UP by this fraction of its own *visible*
+ *                   height (relative to the rendered sprite, not the cell).
+ *                   Use this to cancel out empty padding above the content
+ *                   (tops and bottoms both have content biased downward on the
+ *                   sprite canvas, hence they need a positive shift).
+ */
+const CATEGORY_PREVIEW: Record<
+  FrankPartKey,
+  { scale: number; shiftUpRatio?: number }
+> = {
+  skin: { scale: 1 },
+  currentHat: { scale: 1 },
+  currentTop: { scale: 1.5, shiftUpRatio: 0.10 },
+  currentBottom: { scale: 1.6, shiftUpRatio: 0.20 },
+};
 
 /** Every asset path, then pad with nulls up to 32 slots. */
 const GRID_SLOTS: (string | null)[] = (() => {
-  const paths = Object.keys(FRANK_ASSET_REGISTRY);
+  // Skins are managed elsewhere (character picker), so they don't belong in the closet.
+  const paths = Object.keys(FRANK_ASSET_REGISTRY).filter(
+    (path) => !path.startsWith("frank/skin/"),
+  );
   return Array.from({ length: TOTAL_SLOTS }, (_, i) => paths[i] ?? null);
 })();
 
@@ -40,6 +67,26 @@ const CATEGORY_MAP: Array<[prefix: string, key: FrankPartKey]> = [
 
 function categorize(path: string): FrankPartKey | null {
   return CATEGORY_MAP.find(([prefix]) => path.startsWith(prefix))?.[1] ?? null;
+}
+
+/* -------------------- grid geometry (mirrors the styles) -------------------- */
+
+/**
+ * The grid layout in logical pixels. Kept in one place so the shift math stays
+ * in sync with the styles — if you change `popup.padding`, `cell.padding`, or
+ * the `width: "33%"` cell, update the constants below too.
+ */
+const POPUP_WIDTH_RATIO = 0.9;
+const POPUP_PADDING = 16;
+const GRID_COLS = 3;          // matches `cell: { width: "33%" }`
+const CELL_PADDING = 2;       // matches `cell: { padding: 2 }`
+const CELL_IMAGE_RATIO = 2;   // matches `cellImage: { width/height: "200%" }`
+
+function computeCellInnerHeight(screenWidth: number) {
+  const popupContentWidth = screenWidth * POPUP_WIDTH_RATIO - POPUP_PADDING * 2;
+  const cellWidth = popupContentWidth / GRID_COLS;
+  // aspectRatio: 1 → cell height === cell width; cellInner fills cell minus padding.
+  return cellWidth - CELL_PADDING * 2;
 }
 
 export default function Closet() {
@@ -73,6 +120,14 @@ export default function Closet() {
       height: CLOSET_RECT_ORIG.h * scaleY,
     };
   }, [width, height]);
+
+  // Height of a single sprite layer at its *layout* size (before any transform).
+  // The Image is 200% of cellInner and `contain` makes the sprite fill that
+  // height edge-to-edge, so this equals the sprite's visible height at scale 1.
+  const spriteLayoutHeight = useMemo(
+    () => computeCellInnerHeight(width) * CELL_IMAGE_RATIO,
+    [width],
+  );
 
   const openCloset = useCallback(() => setClosetOpen(true), []);
   const closeCloset = useCallback(() => setClosetOpen(false), []);
@@ -125,8 +180,8 @@ export default function Closet() {
             <View style={styles.chevron} />
           </Pressable>
 
-          <View style={[styles.popup, { width: width * 0.9, height: height * 0.75 }]}>
-            <Text style={styles.title}>Closet</Text>
+          <View style={[styles.popup, { width: width * POPUP_WIDTH_RATIO, height: height * 0.75 }]}>
+            {/* <Text style={styles.title}>Closet</Text> */}
 
             <ScrollView
               contentContainerStyle={styles.gridContent}
@@ -136,6 +191,23 @@ export default function Closet() {
                 {GRID_SLOTS.map((path, i) => {
                   const key = path ? categorize(path) : null;
                   const equipped = !!(path && key && parts && parts[key] === path);
+                  const preview = key ? CATEGORY_PREVIEW[key] : null;
+
+                  // Shift up by `shiftUpRatio × visible sprite height`.
+                  //
+                  // transform order in RN: [{ scale }, { translateY }] composes
+                  // as S × T, so the translate is applied in the *unscaled*
+                  // coordinate frame and ends up scaled by `s` on screen.
+                  // We therefore pass `-ratio × spriteLayoutHeight` (no `s`
+                  // factor): the on-screen shift becomes
+                  //   s × ratio × spriteLayoutHeight  =  ratio × visibleSpriteHeight
+                  // which is exactly "relative to the item's own height".
+                  const shiftY = preview?.shiftUpRatio
+                    ? -preview.shiftUpRatio * spriteLayoutHeight
+                    : 0;
+                  const shiftX = preview?.shiftUpRatio
+                    ? 4
+                    : 2;
 
                   return (
                     <View key={i} style={styles.cell}>
@@ -152,7 +224,16 @@ export default function Closet() {
                         >
                           <Image
                             source={resolveFrankSource(path)}
-                            style={styles.cellImage}
+                            style={[
+                              styles.cellImage,
+                              preview && {
+                                transform: [
+                                  { scale: preview.scale },
+                                  { translateY: shiftY },
+                                  { translateX: shiftX },
+                                ],
+                              },
+                            ]}
                             resizeMode="contain"
                           />
                         </Pressable>
@@ -211,15 +292,15 @@ const styles = StyleSheet.create({
   popup: {
     backgroundColor: "#fff",
     borderRadius: 16,
-    padding: 16,
+    padding: POPUP_PADDING,
     overflow: "hidden",
   },
-  title: { fontSize: 20, fontWeight: "700", marginBottom: 12 },
+  title: { fontSize: 20, fontWeight: "700", marginBottom: 12, left: 8 },
   gridContent: { paddingBottom: 8 },
 
   /* ---- grid ---- */
   grid: { flexDirection: "row", flexWrap: "wrap" },
-  cell: { width: "25%", aspectRatio: 1, padding: 2 },
+  cell: { width: "33%", aspectRatio: 1, padding: CELL_PADDING },
   cellInner: {
     flex: 1,
     borderRadius: 8,
@@ -234,5 +315,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   cellEmpty: { backgroundColor: "rgba(0,0,0,0.03)" },
-  cellImage: { width: "200%", height: "200%" },
+  cellImage: {
+    width: `${CELL_IMAGE_RATIO * 100}%`,
+    height: `${CELL_IMAGE_RATIO * 100}%`,
+  },
 });

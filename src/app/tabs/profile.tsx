@@ -1,94 +1,480 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
-  CaretRight,
-  ChatsTeardrop,
+  Bell,
+  Clock,
   DotsThreeCircle,
-  Eye,
+  MusicNote,
   PencilSimple,
   SignOut,
+  SpeakerHigh,
+  Trash,
   User,
 } from "phosphor-react-native";
-import { ChalkLine } from "../../components/Chalk";
+import { useSession } from "../../contexts/SessionContext";
 import { colors } from "../../theme";
-// Ajuste o caminho para onde o seu client do Supabase está exportado.
 import { supabase } from "../../lib/supabase";
 
-// Nome ainda é placeholder; o e-mail agora vem do Supabase.
-const PLACEHOLDER_USER = {
-  name: "Nome",
+// NOTE: For real OS notifications on mobile, install expo-notifications:
+//   npx expo install expo-notifications
+// Then in sendTestNotification(), swap the Alert.alert(...) branch with:
+//   await Notifications.scheduleNotificationAsync({
+//     content: { title: "My Little Frank", body: "test notification" },
+//     trigger: null,
+//   });
+
+const SETTINGS_KEY = "@my_little_frank/settings";
+
+type Settings = {
+  musicVolume: number; // 0..1
+  sfxVolume: number; // 0..1
+  notificationsEnabled: boolean;
+  notificationIntervalHours: number;
+  notificationIntervalMinutes: number;
 };
 
-type ProfileRowProps = {
+const DEFAULT_SETTINGS: Settings = {
+  musicVolume: 0.7,
+  sfxVolume: 0.8,
+  notificationsEnabled: true,
+  notificationIntervalHours: 12,
+  notificationIntervalMinutes: 0,
+};
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+// ---------------------------------------------------------------------------
+// Cross-platform dialogs
+// (react-native-web's Alert.alert drops the button list — so use window.* on web)
+// ---------------------------------------------------------------------------
+
+function showAlert(title: string, message?: string) {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined") {
+      window.alert(message ? `${title}\n\n${message}` : title);
+    }
+    return;
+  }
+  if (message) {
+    Alert.alert(title, message);
+  } else {
+    Alert.alert(title);
+  }
+}
+
+function confirmDestructive(
+  title: string,
+  message: string,
+  confirmLabel: string
+): Promise<boolean> {
+  if (Platform.OS === "web") {
+    if (typeof window === "undefined") return Promise.resolve(false);
+    return Promise.resolve(window.confirm(`${title}\n\n${message}`));
+  }
+  return new Promise((resolve) => {
+    Alert.alert(title, message, [
+      { text: "Cancelar", style: "cancel", onPress: () => resolve(false) },
+      {
+        text: confirmLabel,
+        style: "destructive",
+        onPress: () => resolve(true),
+      },
+    ]);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Reusable bits
+// ---------------------------------------------------------------------------
+
+function SettingRow({
+  icon,
+  label,
+  children,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.settingRow}>
+      <View style={styles.settingHeader}>
+        <View style={styles.iconBox}>{icon}</View>
+        <Text style={styles.settingLabel} numberOfLines={1}>
+          {label}
+        </Text>
+      </View>
+      <View style={styles.settingControl}>{children}</View>
+    </View>
+  );
+}
+
+function VolumeSlider({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  const [trackWidth, setTrackWidth] = useState(0);
+
+  // 5% steps → 20 discrete positions across the track.
+  const applyX = (x: number) => {
+    if (trackWidth === 0) return;
+    const raw = Math.max(0, Math.min(1, x / trackWidth));
+    onChange(Math.round(raw * 20) / 20);
+  };
+
+  return (
+    <View style={styles.sliderRow}>
+      <View
+        onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
+        onStartShouldSetResponder={() => true}
+        onResponderGrant={(e) => applyX(e.nativeEvent.locationX)}
+        onResponderMove={(e) => applyX(e.nativeEvent.locationX)}
+        style={styles.sliderTrack}
+        accessibilityRole="adjustable"
+        accessibilityValue={{
+          min: 0,
+          max: 100,
+          now: Math.round(value * 100),
+        }}
+      >
+        <View style={[styles.sliderFill, { width: `${value * 100}%` }]} />
+        <View
+          style={[styles.sliderThumb, { left: `${value * 100}%` }]}
+          pointerEvents="none"
+        />
+      </View>
+      <Text style={styles.sliderValue}>{Math.round(value * 100)}%</Text>
+    </View>
+  );
+}
+
+function DangerRow({
+  icon,
+  label,
+  onPress,
+  busy,
+}: {
   icon: React.ReactNode;
   label: string;
   onPress: () => void;
-};
-
-function ProfileRow({ icon, label, onPress }: ProfileRowProps) {
+  busy?: boolean;
+}) {
   return (
     <TouchableOpacity
       accessibilityRole="button"
       onPress={onPress}
-      style={styles.row}
+      disabled={busy}
+      style={styles.dangerRow}
     >
-      <View style={styles.rowLeft}>
+      <View style={styles.dangerLeft}>
         <View style={styles.iconBox}>{icon}</View>
-        <Text style={styles.rowLabel}>{label}</Text>
+        <Text style={styles.dangerText}>{label}</Text>
       </View>
-      <CaretRight size={18} color={colors.ink} weight="bold" />
+      {busy ? (
+        <ActivityIndicator size="small" color={colors.accent} />
+      ) : null}
     </TouchableOpacity>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Screen
+// ---------------------------------------------------------------------------
+
 export default function Profile() {
   const insets = useSafeAreaInsets();
-  const [email, setEmail] = useState<string | null>(null);
-  const [signingOut, setSigningOut] = useState(false);
+  const router = useRouter();
+  const { session, monster, refreshMonster } = useSession();
 
+  const email = session?.user?.email ?? null;
+
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  // Raw 4-digit string, e.g. "1234" → displayed "12 : 34".
+  const [timeDigits, setTimeDigits] = useState(
+    pad2(DEFAULT_SETTINGS.notificationIntervalHours) +
+    pad2(DEFAULT_SETTINGS.notificationIntervalMinutes)
+  );
+  const [nameDraft, setNameDraft] = useState(monster?.name ?? "");
+  const [savingName, setSavingName] = useState(false);
+  const [nameInputWidth, setNameInputWidth] = useState(0); // <-- new
+  const [busy, setBusy] = useState<"account" | "monster" | null>(null);
+
+  // Load persisted settings.
   useEffect(() => {
-    let isMounted = true;
-
-    // Busca inicial do usuário autenticado.
-    supabase.auth.getUser().then(({ data }) => {
-      if (isMounted) {
-        setEmail(data.user?.email ?? null);
-      }
-    });
-
-    // Mantém o e-mail sincronizado com login/logout/refresh.
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setEmail(session?.user?.email ?? null);
-      }
-    );
-
-    return () => {
-      isMounted = false;
-      authListener.subscription.unsubscribe();
-    };
+    AsyncStorage.getItem(SETTINGS_KEY)
+      .then((raw) => {
+        if (!raw) return;
+        try {
+          const parsed = JSON.parse(raw) as Partial<Settings>;
+          const merged: Settings = {
+            ...DEFAULT_SETTINGS,
+            ...parsed,
+            notificationIntervalMinutes:
+              typeof parsed.notificationIntervalMinutes === "number"
+                ? parsed.notificationIntervalMinutes
+                : 0,
+          };
+          setSettings(merged);
+          setTimeDigits(
+            pad2(merged.notificationIntervalHours) +
+            pad2(merged.notificationIntervalMinutes)
+          );
+        } catch {
+          // ignore corrupt storage
+        }
+      })
+      .catch(() => { });
   }, []);
 
-  const handleLogOut = async () => {
-    if (signingOut) return;
-    setSigningOut(true);
+  // Keep the name draft in sync when the monster loads / changes.
+  useEffect(() => {
+    setNameDraft(monster?.name ?? "");
+  }, [monster?.id, monster?.name]);
 
-    const { error } = await supabase.auth.signOut();
+  const updateSetting = useCallback(
+    <K extends keyof Settings>(key: K, value: Settings[K]) => {
+      setSettings((prev) => {
+        const next = { ...prev, [key]: value };
+        AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(next)).catch(
+          () => { }
+        );
+        return next;
+      });
+    },
+    []
+  );
 
-    // O onAuthStateChange acima já vai zerar o email quando a sessão cair.
-    if (error) {
-      console.warn("Falha ao sair:", error.message);
-      setSigningOut(false);
+  // -------------------------------------------------------------------------
+  // Notifications
+  // -------------------------------------------------------------------------
+
+  const sendTestNotification = useCallback(async () => {
+    const message = "notificação placeholder";
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined") {
+        window.alert(message);
+      }
+      return;
     }
-  };
+    // No expo-notifications installed — fall back to an in-app alert.
+    Alert.alert("My Little Frank", message);
+  }, []);
+
+  const handleNotificationToggle = useCallback(
+    async (value: boolean) => {
+      updateSetting("notificationsEnabled", value);
+      if (value) {
+        await sendTestNotification();
+      }
+    },
+    [sendTestNotification, updateSetting]
+  );
+
+  const handleTimeDigitsChange = useCallback((text: string) => {
+    setTimeDigits(text.replace(/\D/g, "").slice(0, 4));
+  }, []);
+
+  const commitTime = useCallback(() => {
+    // Require exactly 4 digits — standard HH:MM field behaviour.
+    if (timeDigits.length !== 4) {
+      setTimeDigits(
+        pad2(settings.notificationIntervalHours) +
+        pad2(settings.notificationIntervalMinutes)
+      );
+      return;
+    }
+    const h = parseInt(timeDigits.slice(0, 2), 10);
+    const m = parseInt(timeDigits.slice(2, 4), 10);
+    if (isNaN(h) || isNaN(m) || h < 0 || h > 99 || m < 0 || m > 59) {
+      setTimeDigits(
+        pad2(settings.notificationIntervalHours) +
+        pad2(settings.notificationIntervalMinutes)
+      );
+      return;
+    }
+    setSettings((prev) => {
+      const next: Settings = {
+        ...prev,
+        notificationIntervalHours: h,
+        notificationIntervalMinutes: m,
+      };
+      AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(next)).catch(
+        () => { }
+      );
+      return next;
+    });
+  }, [
+    timeDigits,
+    settings.notificationIntervalHours,
+    settings.notificationIntervalMinutes,
+  ]);
+
+  // -------------------------------------------------------------------------
+  // Monster name
+  // -------------------------------------------------------------------------
+
+  const saveMonsterName = useCallback(async () => {
+    if (!monster) return;
+    const trimmed = nameDraft.trim();
+    if (trimmed.length < 1 || trimmed.length > 30) {
+      showAlert(
+        "Nome inválido",
+        "O nome do Frank precisa ter entre 1 e 30 caracteres."
+      );
+      return;
+    }
+    if (trimmed === monster.name) return;
+
+    setSavingName(true);
+    const { error } = await supabase
+      .from("monsters")
+      .update({ name: trimmed })
+      .eq("id", monster.id);
+    setSavingName(false);
+
+    if (error) {
+      showAlert("Erro", error.message);
+      return;
+    }
+    await refreshMonster();
+  }, [monster, nameDraft, refreshMonster]);
+
+  // -------------------------------------------------------------------------
+  // Delete monster data (leave pairing) -> /pair
+  // -------------------------------------------------------------------------
+
+  const handleDeleteMonster = useCallback(async () => {
+    if (!monster || busy) return;
+
+    const ok = await confirmDestructive(
+      "Apagar Frank",
+      "Isso vai apagar o Frank permanentemente para TODOS os cuidadores dele. " +
+      "Qualquer outra conta que estava cuidando junto perderá acesso. Não é possível desfazer. Continuar?",
+      "Apagar"
+    );
+    if (!ok) return;
+
+    setBusy("monster");
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        showAlert("Erro", "Sessão expirada. Faça login de novo.");
+        return;
+      }
+
+      const monsterId = monster.id;
+
+      const { error: rpcErr } = await supabase.rpc("delete_monster", {
+        monster_uuid: monsterId,
+      });
+      if (rpcErr) {
+        showAlert("Erro", rpcErr.message);
+        return;
+      }
+
+      const { data: stillExists, error: checkErr } = await supabase.rpc(
+        "monster_exists",
+        { m: monsterId }
+      );
+      if (checkErr) {
+        showAlert("Erro", checkErr.message);
+        return;
+      }
+      if (stillExists) {
+        showAlert("Erro", "Este Frank ainda está no banco de dados.");
+        return;
+      }
+
+      await refreshMonster();
+      router.replace("/pair");
+    } catch (err: any) {
+      showAlert("Erro", err?.message ?? "Falha ao apagar Frank.");
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, monster, refreshMonster, router]);
+
+  // -------------------------------------------------------------------------
+  // Delete account
+  // -------------------------------------------------------------------------
+
+  const handleDeleteAccount = useCallback(async () => {
+    if (busy) return;
+
+    const ok = await confirmDestructive(
+      "Apagar conta",
+      "Isso vai apagar sua conta e todos os seus dados. Essa ação não pode ser desfeita. Continuar?",
+      "Apagar conta"
+    );
+    if (!ok) return;
+
+    setBusy("account");
+    try {
+      const { error: rpcError } = await supabase.rpc("delete_user_account");
+
+      if (rpcError) {
+        console.warn("delete_user_account RPC falhou:", rpcError.message);
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user) {
+          await supabase.from("monsters").delete().eq("created_by", user.id);
+          await supabase
+            .from("monster_members")
+            .delete()
+            .eq("user_id", user.id);
+        }
+      }
+
+      await supabase.auth.signOut();
+    } catch (err: any) {
+      showAlert("Erro", err?.message ?? "Não foi possível apagar a conta.");
+    } finally {
+      setBusy(null);
+    }
+  }, [busy]);
+
+  // -------------------------------------------------------------------------
+  // Log out
+  // -------------------------------------------------------------------------
+
+  const handleLogOut = useCallback(async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      showAlert("Erro", error.message);
+    }
+  }, []);
+
+  // Whether the "Salvar" button should be shown next to the name field.
+  const trimmedName = nameDraft.trim();
+  const showSaveButton =
+    savingName ||
+    (!!monster && trimmedName.length >= 1 && trimmedName !== monster.name);
+
+  // Split into hours/minutes for display.
+  const hoursDisplay = timeDigits.slice(0, 2);
+  const minutesDisplay = timeDigits.slice(2, 4);
 
   return (
     <View style={styles.screen}>
@@ -98,23 +484,22 @@ export default function Profile() {
           { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 32 },
         ]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <View style={styles.header}>
           <View style={styles.headerRow}>
             <View style={styles.headerTitle}>
-              {/* <ChatsTeardrop size={28} color={colors.accent} weight="duotone" /> */}
               <Text style={styles.title}>Perfil</Text>
             </View>
             <TouchableOpacity
               accessibilityRole="button"
               accessibilityLabel="More options"
               hitSlop={12}
-              onPress={() => {}}
+              onPress={() => { }}
             >
               <DotsThreeCircle size={26} color={colors.ink} weight="bold" />
             </TouchableOpacity>
           </View>
-          {/* <ChalkLine /> */}
         </View>
 
         <View style={styles.profileInfo}>
@@ -122,56 +507,160 @@ export default function Profile() {
             <View style={styles.avatarPlaceholder}>
               <User size={44} color={colors.ink} weight="duotone" />
             </View>
-            {/* <TouchableOpacity
-              style={styles.editIcon}
-              accessibilityRole="button"
-              accessibilityLabel="Edit avatar"
-              onPress={() => {}}
-            >
-              <PencilSimple size={14} color={colors.paper} weight="bold" />
-            </TouchableOpacity> */}
           </View>
-          <Text style={styles.name}>{PLACEHOLDER_USER.name}</Text>
+          <Text style={styles.name}>{monster?.name ?? "Sem Frank"}</Text>
           <Text style={styles.email}>{email ?? ""}</Text>
         </View>
 
-        {/* <ChalkLine /> */}
-
         <View style={styles.options}>
-          <ProfileRow
-            icon={<PencilSimple size={18} color={colors.ink} weight="bold" />}
-            label="Editar Perfil"
-            onPress={() => {}}
-          />
+          <Text style={styles.sectionTitle}>Opções</Text>
 
-          {/* <ChalkLine /> */}
+          <SettingRow
+            icon={<MusicNote size={18} color={colors.ink} weight="bold" />}
+            label="Volume da música"
+          >
+            <VolumeSlider
+              value={settings.musicVolume}
+              onChange={(v) => updateSetting("musicVolume", v)}
+            />
+          </SettingRow>
 
-          {/* <View style={styles.row}>
-            <View style={styles.rowLeft}>
-              <View style={styles.iconBox}>
-                <Eye size={18} color={colors.ink} weight="bold" />
-              </View>
-              <Text style={styles.rowLabel}>Dark Theme</Text>
-            </View>
+          <SettingRow
+            icon={<SpeakerHigh size={18} color={colors.ink} weight="bold" />}
+            label="Volume dos sons"
+          >
+            <VolumeSlider
+              value={settings.sfxVolume}
+              onChange={(v) => updateSetting("sfxVolume", v)}
+            />
+          </SettingRow>
+
+          <SettingRow
+            icon={<Bell size={18} color={colors.ink} weight="bold" />}
+            label="Notificações"
+          >
             <Switch
-              value={darkTheme}
-              onValueChange={() => setDarkTheme(!darkTheme)}
+              value={settings.notificationsEnabled}
+              onValueChange={handleNotificationToggle}
               trackColor={{ false: colors.muted, true: colors.accent }}
               thumbColor={colors.paper}
               ios_backgroundColor={colors.muted}
             />
-          </View> */}
+          </SettingRow>
 
-          <ProfileRow
-            icon={<SignOut size={18} color={colors.accent} weight="bold" />}
-            label="Log Out"
-            onPress={handleLogOut}
+          <SettingRow
+            icon={<Clock size={18} color={colors.ink} weight="bold" />}
+            label="Horário das perguntas"
+          >
+            <View style={styles.inputRow}>
+              <View style={styles.timeBox}>
+                <View pointerEvents="none" style={styles.timeDisplay}>
+                  <Text style={styles.timeDigits}>{hoursDisplay}</Text>
+                  <Text style={styles.timeColon}> : </Text>
+                  <Text style={styles.timeDigits}>{minutesDisplay}</Text>
+                </View>
+                <TextInput
+                  value={timeDigits}
+                  onChangeText={handleTimeDigitsChange}
+                  onBlur={commitTime}
+                  onSubmitEditing={commitTime}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                  style={styles.timeHiddenInput}
+                  returnKeyType="done"
+                  accessibilityLabel="Horário das perguntas em horas e minutos"
+                  autoCorrect={false}
+                  autoComplete="off"
+                />
+              </View>
+            </View>
+          </SettingRow>
+
+          <SettingRow
+            icon={<PencilSimple size={18} color={colors.ink} weight="bold" />}
+            label="Nome do Frank"
+          >
+            <View style={styles.inputRow}>
+              {/* Invisible Text measures the current name so the input
+                  can hug it exactly. Falls back to placeholder "Frank"
+                  when empty so the box never collapses. */}
+              <Text
+                onLayout={(e) =>
+                  setNameInputWidth(Math.ceil(e.nativeEvent.layout.width))
+                }
+                style={styles.nameMeasure}
+                numberOfLines={1}
+                pointerEvents="none"
+              >
+                {nameDraft.length > 0 ? nameDraft : "Frank"}
+              </Text>
+
+              <TextInput
+                value={nameDraft}
+                onChangeText={setNameDraft}
+                maxLength={30}
+                style={[
+                  styles.textInput,
+                  {
+                    flexGrow: 1,   // fill available space when there is any
+                    flexShrink: 1, // shrink when the row is over-constrained
+                    minWidth: Math.max(nameInputWidth + 28, 80), // never below hug-content
+                  },
+                ]}
+                placeholder="Frank"
+                placeholderTextColor={colors.muted}
+                editable={!!monster && !savingName}
+                returnKeyType="done"
+                onSubmitEditing={saveMonsterName}
+              />
+              {showSaveButton && (
+                <TouchableOpacity
+                  onPress={saveMonsterName}
+                  disabled={savingName}
+                  style={styles.saveBtn}
+                  accessibilityRole="button"
+                >
+                  {savingName ? (
+                    <ActivityIndicator size="small" color={colors.ink} />
+                  ) : (
+                    <Text style={styles.saveBtnText}>Salvar</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
+          </SettingRow>
+
+          <DangerRow
+            icon={<Trash size={18} color={colors.accent} weight="bold" />}
+            label="Apagar Frank"
+            onPress={handleDeleteMonster}
+            busy={busy === "monster"}
+          />
+
+          <DangerRow
+            icon={<Trash size={18} color={colors.accent} weight="bold" />}
+            label="Apagar conta"
+            onPress={handleDeleteAccount}
+            busy={busy === "account"}
           />
         </View>
+
+        <TouchableOpacity
+          accessibilityRole="button"
+          onPress={handleLogOut}
+          style={styles.logoutBtn}
+        >
+          <SignOut size={16} color={colors.muted} weight="bold" />
+          <Text style={styles.logoutText}>Sair</Text>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
   screen: {
@@ -217,16 +706,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  editIcon: {
-    position: "absolute",
-    bottom: -2,
-    right: -2,
-    backgroundColor: colors.accent,
-    borderWidth: 2,
-    borderColor: colors.ink,
-    borderRadius: 8,
-    padding: 5,
-  },
   name: {
     color: colors.ink,
     fontSize: 22,
@@ -241,18 +720,21 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   options: {
-    gap: 12,
-    // Empurra o bloco para o final da tela.
-    marginTop: "auto",
+    gap: 20,
   },
-  row: {
+  sectionTitle: {
+    color: colors.ink,
+    fontSize: 20,
+    fontWeight: "900",
+  },
+  // Row: [icon + label]  <---->  [control]
+  settingRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 12,
     gap: 12,
+    paddingVertical: 4,
   },
-  rowLeft: {
+  settingHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
@@ -263,13 +745,173 @@ const styles = StyleSheet.create({
     height: 34,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 2,
-    borderColor: colors.ink,
-    borderRadius: 4,
   },
-  rowLabel: {
+  settingLabel: {
     color: colors.ink,
     fontSize: 16,
     fontWeight: "800",
+    flexShrink: 1,
+  },
+  settingControl: {
+    flex: 1,
+    alignItems: "flex-end",
+  },
+  // Slider
+  sliderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    alignSelf: "stretch",
+  },
+  sliderTrack: {
+    flex: 1,
+    height: 10,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    borderRadius: 5,
+    position: "relative",
+    justifyContent: "center",
+  },
+  sliderFill: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: colors.accent,
+    borderRadius: 3,
+  },
+  sliderThumb: {
+    position: "absolute",
+    top: -5,
+    width: 18,
+    height: 18,
+    marginLeft: -9,
+    borderRadius: 9,
+    backgroundColor: colors.paper,
+    borderWidth: 3,
+    borderColor: colors.ink,
+  },
+  sliderValue: {
+    color: colors.muted,
+    fontSize: 14,
+    fontWeight: "800",
+    width: 44,
+    textAlign: "right",
+  },
+  // Inputs
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    alignSelf: "stretch",
+    justifyContent: "flex-end",
+  },
+  textInput: {
+    borderWidth: 2,
+    borderColor: colors.ink,
+    borderRadius: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    color: colors.ink,
+    fontSize: 15,
+    fontWeight: "800",
+    backgroundColor: "transparent",
+  },
+  // HH : MM combined box
+  timeBox: {
+    borderWidth: 2,
+    borderColor: colors.ink,
+    borderRadius: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    minWidth: 104,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  timeDisplay: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  timeDigits: {
+    color: colors.ink,
+    fontSize: 15,
+    fontWeight: "800",
+    fontVariant: ["tabular-nums"],
+  },
+  timeColon: {
+    color: colors.muted,
+    fontSize: 15,
+    fontWeight: "800",
+    marginHorizontal: 6,
+  },
+  // The TextInput is an invisible overlay that captures typing;
+  // the styled View above it renders the formatted display.
+  timeHiddenInput: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.01,
+    color: colors.ink,
+    fontSize: 15,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    textAlign: "center",
+  },
+  nameMeasure: {
+    position: "absolute",
+    opacity: 0,
+    left: 0,
+    top: 0,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  saveBtn: {
+    borderWidth: 2,
+    borderColor: colors.ink,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 4,
+    minWidth: 72,
+    alignItems: "center",
+  },
+  saveBtnText: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  // Danger
+  dangerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+  },
+  dangerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flexShrink: 1,
+  },
+  dangerText: {
+    color: colors.accent,
+    fontSize: 16,
+    fontWeight: "800",
+    flexShrink: 1,
+  },
+  // Logout
+  logoutBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    alignSelf: "center",
+    padding: 10,
+    marginTop: 4,
+  },
+  logoutText: {
+    color: colors.muted,
+    fontSize: 15,
+    fontWeight: "700",
+    textDecorationLine: "underline",
   },
 });
