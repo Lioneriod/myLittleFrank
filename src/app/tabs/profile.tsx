@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -45,6 +44,7 @@ type Settings = {
   sfxVolume: number; // 0..1
   notificationsEnabled: boolean;
   notificationIntervalHours: number;
+  notificationIntervalMinutes: number;
 };
 
 const DEFAULT_SETTINGS: Settings = {
@@ -52,7 +52,12 @@ const DEFAULT_SETTINGS: Settings = {
   sfxVolume: 0.8,
   notificationsEnabled: true,
   notificationIntervalHours: 12,
+  notificationIntervalMinutes: 0,
 };
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
 
 // ---------------------------------------------------------------------------
 // Cross-platform dialogs
@@ -129,27 +134,34 @@ function VolumeSlider({
 }) {
   const [trackWidth, setTrackWidth] = useState(0);
 
-  const handlePress = (e: any) => {
+  // 5% steps → 20 discrete positions across the track.
+  const applyX = (x: number) => {
     if (trackWidth === 0) return;
-    const x = e.nativeEvent.locationX;
-    onChange(Math.max(0, Math.min(1, x / trackWidth)));
+    const raw = Math.max(0, Math.min(1, x / trackWidth));
+    onChange(Math.round(raw * 20) / 20);
   };
 
   return (
     <View style={styles.sliderRow}>
-      <Pressable
+      <View
         onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
-        onPress={handlePress}
+        onStartShouldSetResponder={() => true}
+        onResponderGrant={(e) => applyX(e.nativeEvent.locationX)}
+        onResponderMove={(e) => applyX(e.nativeEvent.locationX)}
         style={styles.sliderTrack}
         accessibilityRole="adjustable"
-        accessibilityValue={{ min: 0, max: 100, now: Math.round(value * 100) }}
+        accessibilityValue={{
+          min: 0,
+          max: 100,
+          now: Math.round(value * 100),
+        }}
       >
         <View style={[styles.sliderFill, { width: `${value * 100}%` }]} />
         <View
           style={[styles.sliderThumb, { left: `${value * 100}%` }]}
           pointerEvents="none"
         />
-      </Pressable>
+      </View>
       <Text style={styles.sliderValue}>{Math.round(value * 100)}%</Text>
     </View>
   );
@@ -196,11 +208,14 @@ export default function Profile() {
   const email = session?.user?.email ?? null;
 
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
-  const [intervalDraft, setIntervalDraft] = useState(
-    String(DEFAULT_SETTINGS.notificationIntervalHours)
+  // Raw 4-digit string, e.g. "1234" → displayed "12 : 34".
+  const [timeDigits, setTimeDigits] = useState(
+    pad2(DEFAULT_SETTINGS.notificationIntervalHours) +
+    pad2(DEFAULT_SETTINGS.notificationIntervalMinutes)
   );
   const [nameDraft, setNameDraft] = useState(monster?.name ?? "");
   const [savingName, setSavingName] = useState(false);
+  const [nameInputWidth, setNameInputWidth] = useState(0); // <-- new
   const [busy, setBusy] = useState<"account" | "monster" | null>(null);
 
   // Load persisted settings.
@@ -210,14 +225,24 @@ export default function Profile() {
         if (!raw) return;
         try {
           const parsed = JSON.parse(raw) as Partial<Settings>;
-          const merged = { ...DEFAULT_SETTINGS, ...parsed };
+          const merged: Settings = {
+            ...DEFAULT_SETTINGS,
+            ...parsed,
+            notificationIntervalMinutes:
+              typeof parsed.notificationIntervalMinutes === "number"
+                ? parsed.notificationIntervalMinutes
+                : 0,
+          };
           setSettings(merged);
-          setIntervalDraft(String(merged.notificationIntervalHours));
+          setTimeDigits(
+            pad2(merged.notificationIntervalHours) +
+            pad2(merged.notificationIntervalMinutes)
+          );
         } catch {
           // ignore corrupt storage
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // Keep the name draft in sync when the monster loads / changes.
@@ -230,7 +255,7 @@ export default function Profile() {
       setSettings((prev) => {
         const next = { ...prev, [key]: value };
         AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(next)).catch(
-          () => {}
+          () => { }
         );
         return next;
       });
@@ -264,15 +289,44 @@ export default function Profile() {
     [sendTestNotification, updateSetting]
   );
 
-  const commitInterval = useCallback(() => {
-    const n = parseInt(intervalDraft, 10);
-    if (isNaN(n) || n < 1 || n > 9999) {
-      setIntervalDraft(String(settings.notificationIntervalHours));
+  const handleTimeDigitsChange = useCallback((text: string) => {
+    setTimeDigits(text.replace(/\D/g, "").slice(0, 4));
+  }, []);
+
+  const commitTime = useCallback(() => {
+    // Require exactly 4 digits — standard HH:MM field behaviour.
+    if (timeDigits.length !== 4) {
+      setTimeDigits(
+        pad2(settings.notificationIntervalHours) +
+        pad2(settings.notificationIntervalMinutes)
+      );
       return;
     }
-    updateSetting("notificationIntervalHours", n);
-    setIntervalDraft(String(n));
-  }, [intervalDraft, settings.notificationIntervalHours, updateSetting]);
+    const h = parseInt(timeDigits.slice(0, 2), 10);
+    const m = parseInt(timeDigits.slice(2, 4), 10);
+    if (isNaN(h) || isNaN(m) || h < 0 || h > 99 || m < 0 || m > 59) {
+      setTimeDigits(
+        pad2(settings.notificationIntervalHours) +
+        pad2(settings.notificationIntervalMinutes)
+      );
+      return;
+    }
+    setSettings((prev) => {
+      const next: Settings = {
+        ...prev,
+        notificationIntervalHours: h,
+        notificationIntervalMinutes: m,
+      };
+      AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(next)).catch(
+        () => { }
+      );
+      return next;
+    });
+  }, [
+    timeDigits,
+    settings.notificationIntervalHours,
+    settings.notificationIntervalMinutes,
+  ]);
 
   // -------------------------------------------------------------------------
   // Monster name
@@ -309,62 +363,57 @@ export default function Profile() {
   // -------------------------------------------------------------------------
 
   const handleDeleteMonster = useCallback(async () => {
-  if (!monster || busy) return;
+    if (!monster || busy) return;
 
-  const ok = await confirmDestructive(
-    "Apagar Frank",
-    "Isso vai apagar o Frank permanentemente para TODOS os cuidadores dele. " +
+    const ok = await confirmDestructive(
+      "Apagar Frank",
+      "Isso vai apagar o Frank permanentemente para TODOS os cuidadores dele. " +
       "Qualquer outra conta que estava cuidando junto perderá acesso. Não é possível desfazer. Continuar?",
-    "Apagar"
-  );
-  if (!ok) return;
-
-  setBusy("monster");
-  try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      showAlert("Erro", "Sessão expirada. Faça login de novo.");
-      return;
-    }
-
-    const monsterId = monster.id;
-
-    // Deletes the monster row; FK cascade removes all monster_members rows.
-    const { error: rpcErr } = await supabase.rpc("delete_monster", {
-      monster_uuid: monsterId,
-    });
-    if (rpcErr) {
-      showAlert("Erro", rpcErr.message);
-      return;
-    }
-
-    // Verify via SECURITY DEFINER helper (RLS on `monsters` would hide the row otherwise).
-    const { data: stillExists, error: checkErr } = await supabase.rpc(
-      "monster_exists",
-      { m: monsterId }
+      "Apagar"
     );
-    if (checkErr) {
-      showAlert("Erro", checkErr.message);
-      return;
-    }
-    if (stillExists) {
-      showAlert(
-        "Erro",
-        "Este Frank ainda está no banco de dados."
-      );
-      return;
-    }
+    if (!ok) return;
 
-    await refreshMonster();
-    router.replace("/pair");
-  } catch (err: any) {
-    showAlert("Erro", err?.message ?? "Falha ao apagar Frank.");
-  } finally {
-    setBusy(null);
-  }
-}, [busy, monster, refreshMonster, router]);
+    setBusy("monster");
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        showAlert("Erro", "Sessão expirada. Faça login de novo.");
+        return;
+      }
+
+      const monsterId = monster.id;
+
+      const { error: rpcErr } = await supabase.rpc("delete_monster", {
+        monster_uuid: monsterId,
+      });
+      if (rpcErr) {
+        showAlert("Erro", rpcErr.message);
+        return;
+      }
+
+      const { data: stillExists, error: checkErr } = await supabase.rpc(
+        "monster_exists",
+        { m: monsterId }
+      );
+      if (checkErr) {
+        showAlert("Erro", checkErr.message);
+        return;
+      }
+      if (stillExists) {
+        showAlert("Erro", "Este Frank ainda está no banco de dados.");
+        return;
+      }
+
+      await refreshMonster();
+      router.replace("/pair");
+    } catch (err: any) {
+      showAlert("Erro", err?.message ?? "Falha ao apagar Frank.");
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, monster, refreshMonster, router]);
 
   // -------------------------------------------------------------------------
   // Delete account
@@ -382,11 +431,9 @@ export default function Profile() {
 
     setBusy("account");
     try {
-      // Preferred: full deletion via security-definer RPC.
       const { error: rpcError } = await supabase.rpc("delete_user_account");
 
       if (rpcError) {
-        // Fallback: at least remove user data, then sign out.
         console.warn("delete_user_account RPC falhou:", rpcError.message);
         const {
           data: { user },
@@ -402,10 +449,7 @@ export default function Profile() {
 
       await supabase.auth.signOut();
     } catch (err: any) {
-      showAlert(
-        "Erro",
-        err?.message ?? "Não foi possível apagar a conta."
-      );
+      showAlert("Erro", err?.message ?? "Não foi possível apagar a conta.");
     } finally {
       setBusy(null);
     }
@@ -421,6 +465,16 @@ export default function Profile() {
       showAlert("Erro", error.message);
     }
   }, []);
+
+  // Whether the "Salvar" button should be shown next to the name field.
+  const trimmedName = nameDraft.trim();
+  const showSaveButton =
+    savingName ||
+    (!!monster && trimmedName.length >= 1 && trimmedName !== monster.name);
+
+  // Split into hours/minutes for display.
+  const hoursDisplay = timeDigits.slice(0, 2);
+  const minutesDisplay = timeDigits.slice(2, 4);
 
   return (
     <View style={styles.screen}>
@@ -441,7 +495,7 @@ export default function Profile() {
               accessibilityRole="button"
               accessibilityLabel="More options"
               hitSlop={12}
-              onPress={() => {}}
+              onPress={() => { }}
             >
               <DotsThreeCircle size={26} color={colors.ink} weight="bold" />
             </TouchableOpacity>
@@ -496,21 +550,29 @@ export default function Profile() {
 
           <SettingRow
             icon={<Clock size={18} color={colors.ink} weight="bold" />}
-            label="Frequência das notificações"
+            label="Horário das perguntas"
           >
             <View style={styles.inputRow}>
-              <TextInput
-                keyboardType="number-pad"
-                value={intervalDraft}
-                onChangeText={setIntervalDraft}
-                onBlur={commitInterval}
-                onSubmitEditing={commitInterval}
-                maxLength={4}
-                style={[styles.textInput, styles.intervalInput]}
-                returnKeyType="done"
-                accessibilityLabel="Horas entre notificações"
-              />
-              <Text style={styles.inputSuffix}>horas</Text>
+              <View style={styles.timeBox}>
+                <View pointerEvents="none" style={styles.timeDisplay}>
+                  <Text style={styles.timeDigits}>{hoursDisplay}</Text>
+                  <Text style={styles.timeColon}> : </Text>
+                  <Text style={styles.timeDigits}>{minutesDisplay}</Text>
+                </View>
+                <TextInput
+                  value={timeDigits}
+                  onChangeText={handleTimeDigitsChange}
+                  onBlur={commitTime}
+                  onSubmitEditing={commitTime}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                  style={styles.timeHiddenInput}
+                  returnKeyType="done"
+                  accessibilityLabel="Horário das perguntas em horas e minutos"
+                  autoCorrect={false}
+                  autoComplete="off"
+                />
+              </View>
             </View>
           </SettingRow>
 
@@ -519,39 +581,52 @@ export default function Profile() {
             label="Nome do Frank"
           >
             <View style={styles.inputRow}>
+              {/* Invisible Text measures the current name so the input
+                  can hug it exactly. Falls back to placeholder "Frank"
+                  when empty so the box never collapses. */}
+              <Text
+                onLayout={(e) =>
+                  setNameInputWidth(Math.ceil(e.nativeEvent.layout.width))
+                }
+                style={styles.nameMeasure}
+                numberOfLines={1}
+                pointerEvents="none"
+              >
+                {nameDraft.length > 0 ? nameDraft : "Frank"}
+              </Text>
+
               <TextInput
                 value={nameDraft}
                 onChangeText={setNameDraft}
                 maxLength={30}
-                style={[styles.textInput, styles.nameInput]}
+                style={[
+                  styles.textInput,
+                  {
+                    flexGrow: 1,   // fill available space when there is any
+                    flexShrink: 1, // shrink when the row is over-constrained
+                    minWidth: Math.max(nameInputWidth + 28, 80), // never below hug-content
+                  },
+                ]}
                 placeholder="Frank"
                 placeholderTextColor={colors.muted}
                 editable={!!monster && !savingName}
                 returnKeyType="done"
                 onSubmitEditing={saveMonsterName}
               />
-              <TouchableOpacity
-                onPress={saveMonsterName}
-                disabled={
-                  !monster ||
-                  savingName ||
-                  nameDraft.trim() === monster?.name
-                }
-                style={[
-                  styles.saveBtn,
-                  (!monster ||
-                    savingName ||
-                    nameDraft.trim() === monster?.name) &&
-                    styles.saveBtnDisabled,
-                ]}
-                accessibilityRole="button"
-              >
-                {savingName ? (
-                  <ActivityIndicator size="small" color={colors.ink} />
-                ) : (
-                  <Text style={styles.saveBtnText}>Salvar</Text>
-                )}
-              </TouchableOpacity>
+              {showSaveButton && (
+                <TouchableOpacity
+                  onPress={saveMonsterName}
+                  disabled={savingName}
+                  style={styles.saveBtn}
+                  accessibilityRole="button"
+                >
+                  {savingName ? (
+                    <ActivityIndicator size="small" color={colors.ink} />
+                  ) : (
+                    <Text style={styles.saveBtnText}>Salvar</Text>
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
           </SettingRow>
 
@@ -742,17 +817,53 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     backgroundColor: "transparent",
   },
-  intervalInput: {
-    width: 80,
+  // HH : MM combined box
+  timeBox: {
+    borderWidth: 2,
+    borderColor: colors.ink,
+    borderRadius: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    minWidth: 104,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  timeDisplay: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  timeDigits: {
+    color: colors.ink,
+    fontSize: 15,
+    fontWeight: "800",
+    fontVariant: ["tabular-nums"],
+  },
+  timeColon: {
+    color: colors.muted,
+    fontSize: 15,
+    fontWeight: "800",
+    marginHorizontal: 6,
+  },
+  // The TextInput is an invisible overlay that captures typing;
+  // the styled View above it renders the formatted display.
+  timeHiddenInput: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.01,
+    color: colors.ink,
+    fontSize: 15,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     textAlign: "center",
   },
-  nameInput: {
-    flex: 1,
-  },
-  inputSuffix: {
-    color: colors.muted,
-    fontSize: 14,
-    fontWeight: "700",
+  nameMeasure: {
+    position: "absolute",
+    opacity: 0,
+    left: 0,
+    top: 0,
+    fontSize: 15,
+    fontWeight: "800",
   },
   saveBtn: {
     borderWidth: 2,
@@ -762,9 +873,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     minWidth: 72,
     alignItems: "center",
-  },
-  saveBtnDisabled: {
-    opacity: 0.4,
   },
   saveBtnText: {
     color: colors.ink,
