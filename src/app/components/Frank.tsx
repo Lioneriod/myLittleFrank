@@ -6,16 +6,11 @@ import { flush, frankStore } from "./frankStore";
 export { DEFAULT_FRANK_PARTS };
 export type { FrankPartKey, FrankParts };
 
-/* ----------------------------- placement ----------------------------- */
-
 export type FrankPlacement = {
-  /** 0..1 of screen height. 0 = flush with bottom, 1 = top. Anchors the model's bottom edge. */
   bottomAnchorRatio: number;
-  /** 0..1 of screen width. 0.5 = horizontally centered. Anchors the model's horizontal center. */
   left: number;
 };
 
-// lista de lugares do frank para cada tela do app
 export const FRANK_PLACEMENTS = {
   default: { bottomAnchorRatio: 0.10, left: 0.5 },
   home: { bottomAnchorRatio: 0.06, left: 0.5 },
@@ -24,8 +19,6 @@ export const FRANK_PLACEMENTS = {
 
 export type FrankPlacementName = keyof typeof FRANK_PLACEMENTS;
 
-/* ------------------------------- handle ------------------------------ */
-
 export type FrankHandle = {
   setPart: <K extends FrankPartKey>(key: K, value: FrankParts[K]) => void;
   setParts: (next: Partial<FrankParts>) => void;
@@ -33,23 +26,13 @@ export type FrankHandle = {
   save: () => Promise<void>;
 };
 
-/* ------------------------------ sizing ------------------------------- */
+const FRANK_BASE_WIDTH = 64 * 9 + 16 * 3;
+const FRANK_BASE_HEIGHT = 64 * 12 + 16 * 4;
 
-/** Intrinsic model size (the sprite grid + padding). */
-const FRANK_BASE_WIDTH = 64 * 9 + 16 * 3;   // 624
-const FRANK_BASE_HEIGHT = 64 * 12 + 16 * 4; // 832
-
-/**
- * Tuning knobs. Frank scales uniformly (aspect ratio preserved) to the
- * smaller of these two budgets, so he can never exceed either one.
- * Raise to make Frank bigger, lower to make him smaller.
- */
 const FRANK_MAX_WIDTH_RATIO = 1;
 const FRANK_MAX_HEIGHT_RATIO = FRANK_MAX_WIDTH_RATIO * 3 / 4; 
 
 function computeFrankSize(screenWidth: number, screenHeight: number) {
-  // useWindowDimensions can briefly report 0 on mount in some environments.
-  // Falling back to a sane reference size keeps Frank visible (not 0×0) until real dims arrive.
   const w = screenWidth > 0 ? screenWidth : 390;
   const h = screenHeight > 0 ? screenHeight : 844;
 
@@ -64,11 +47,8 @@ function computeFrankSize(screenWidth: number, screenHeight: number) {
   };
 }
 
-/* ------------------------------ component ---------------------------- */
-
 type Props = {
   monsterId: string;
-  /** Named preset OR explicit placement. Defaults to the "default" preset. */
   placement?: FrankPlacementName | FrankPlacement;
 };
 
@@ -104,12 +84,9 @@ const Frank = forwardRef<FrankHandle, Props>(({ monsterId, placement }, ref) => 
     [monsterId],
   );
 
-  // Anchors the *center* of Frank horizontally and the *bottom* vertically.
   const left = screenWidth * leftAnchorRatio - frankWidth / 2;
   const bottom = screenHeight * bottomAnchorRatio;
 
-  // Explicit width/height on every layer — don't rely on absoluteFillObject alone,
-  // which can collapse when the parent has non-integer float dimensions.
   const layerStyle = {
     position: "absolute" as const,
     top: 0,

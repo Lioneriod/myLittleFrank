@@ -14,16 +14,14 @@ const RETRY_MS = 5000;
 export type FrankSnapshot = {
   parts: FrankParts;
   status: "idle" | "hydrating" | "ready";
-  dirty: boolean;      // local changes not yet confirmed by the server
-  updatedAt: number;   // ms epoch, last-write-wins
+  dirty: boolean;
+  updatedAt: number;
 };
 
 const snapshots = new Map<string, FrankSnapshot>();
 const listeners = new Map<string, Set<() => void>>();
 const pushTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const hydrations = new Map<string, Promise<void>>();
-
-/* ------------------------------- state ------------------------------- */
 
 function getSnapshot(monsterId: string): FrankSnapshot {
   let snap = snapshots.get(monsterId);
@@ -51,8 +49,6 @@ function subscribe(monsterId: string, cb: () => void) {
   };
 }
 
-/* ------------------------------ writes ------------------------------- */
-
 function applyPatch(monsterId: string, patch: Partial<FrankParts>) {
   const cur = getSnapshot(monsterId);
   const parts = sanitizeFrankParts({ ...cur.parts, ...patch });
@@ -72,17 +68,12 @@ export function setParts(monsterId: string, next: Partial<FrankParts>) {
   applyPatch(monsterId, next);
 }
 
-/* --------------------------- local cache ----------------------------- */
-
 async function persistLocal(monsterId: string, parts: FrankParts, updatedAt: number) {
   try {
     await AsyncStorage.setItem(STORAGE_PREFIX + monsterId, JSON.stringify({ parts, updatedAt }));
   } catch {
-    /* best-effort */
   }
 }
-
-/* ----------------------------- pushing ------------------------------- */
 
 function schedulePush(monsterId: string, delay = PUSH_DEBOUNCE_MS) {
   const existing = pushTimers.get(monsterId);
@@ -107,7 +98,7 @@ async function push(monsterId: string) {
       frank_parts_updated_at: new Date(snap.updatedAt).toISOString(),
     })
     .eq("id", monsterId)
-    .select("id, frank_parts_updated_at");   // ← forces return of the row too
+    .select("id, frank_parts_updated_at");
 
   console.log("[frankStore.push]", {
     monsterId,
@@ -124,7 +115,6 @@ async function push(monsterId: string) {
     schedulePush(monsterId, RETRY_MS);
     return;
   }
-  // ...
 }
 
 export function flush(monsterId: string) {
@@ -135,8 +125,6 @@ export function flush(monsterId: string) {
   }
   return push(monsterId);
 }
-
-/* ----------------------------- hydration ----------------------------- */
 
 export function hydrate(monsterId: string): Promise<void> {
   const inFlight = hydrations.get(monsterId);
@@ -150,7 +138,6 @@ async function doHydrate(monsterId: string) {
   const starting = getSnapshot(monsterId);
   commit(monsterId, { ...starting, status: "hydrating" });
 
-  /* 1. local cache — instant */
   let localApplied = false;
   try {
     const raw = await AsyncStorage.getItem(STORAGE_PREFIX + monsterId);
@@ -168,10 +155,8 @@ async function doHydrate(monsterId: string) {
       }
     }
   } catch {
-    /* ignore */
   }
 
-  /* 2. remote — source of truth across devices */
   let remoteApplied = false;
   try {
     const { data, error } = await supabase
@@ -193,18 +178,13 @@ async function doHydrate(monsterId: string) {
       }
     }
   } catch {
-    /* offline — keep local */
   }
 
   if (!remoteApplied) {
     const cur = getSnapshot(monsterId);
     commit(monsterId, { ...cur, status: "ready" });
-    // Local edits exist but the server doesn't have them (fresh DB, offline,
-    // or newer local) — sync up so this device's state wins.
     if (cur.dirty || localApplied) schedulePush(monsterId);
   }
 }
-
-/* ------------------------------ exports ------------------------------ */
 
 export const frankStore = { getSnapshot, subscribe, hydrate, setPart, setParts, flush };

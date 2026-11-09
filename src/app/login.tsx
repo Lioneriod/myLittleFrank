@@ -27,7 +27,6 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  // Assim que a sessão existir (login agora ou salva de antes), segue o fluxo.
   if (session) return <Redirect href="/" />;
 
   const switchMode = (next: Mode) => {
@@ -58,7 +57,6 @@ export default function Login() {
         if (error) {
           setError(friendlyError(error));
         } else if (!data.session) {
-          // Acontece quando "Confirm email" está ligado no Supabase.
           setMode("signIn");
           setNotice("Conta criada! Confirme pelo link que enviamos para o seu e-mail e depois entre.");
         }

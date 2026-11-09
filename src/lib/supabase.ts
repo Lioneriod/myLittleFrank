@@ -1,6 +1,6 @@
 import "react-native-url-polyfill/auto";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, FunctionsHttpError } from "@supabase/supabase-js";
 import { AppState, Platform } from "react-native";
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -14,8 +14,6 @@ if (!supabaseUrl || !supabaseKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
-    // No celular a sessão fica salva no AsyncStorage, então o usuário só faz login uma vez.
-    // Na web o supabase-js já usa o localStorage.
     ...(Platform.OS !== "web" ? { storage: AsyncStorage } : {}),
     autoRefreshToken: true,
     persistSession: true,
@@ -23,7 +21,6 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
   },
 });
 
-// Só renova o token enquanto o app está em primeiro plano.
 if (Platform.OS !== "web") {
   AppState.addEventListener("change", (state) => {
     if (state === "active") {
@@ -46,7 +43,6 @@ export type Monster = {
 
 export const MONSTER_COLUMNS = "id, name, invite_code, hunger, thirst, affection, created_at";
 
-// Dia 1 é o dia em que o monstrinho foi criado.
 export function monsterAgeInDays(monster: Monster) {
   const ms = Date.now() - new Date(monster.created_at).getTime();
   return Math.floor(ms / 86_400_000) + 1;
@@ -63,6 +59,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   monster_full: "Esse monstrinho já tem dois cuidadores.",
   already_has_monster: "Você já cuida de um monstrinho.",
   not_authenticated: "Sua sessão expirou. Entre novamente.",
+  not_a_member: "Você não cuida deste monstrinho.",
+  no_questions: "Nenhuma pergunta disponível no momento.",
+  no_pairing_question: "Nenhuma pergunta disponível no momento.",
+  not_all_answered: "Espere todos os cuidadores responderem.",
 };
 
 export function friendlyError(error: unknown) {
@@ -72,4 +72,19 @@ export function friendlyError(error: unknown) {
     (message && ERROR_MESSAGES[message]) ||
     "Algo deu errado. Verifique sua conexão e tente de novo."
   );
+}
+
+async function functionErrorCode(error: unknown) {
+  if (!(error instanceof FunctionsHttpError)) return undefined;
+  const payload = await (error.context as Response).json().catch(() => null);
+  return typeof payload?.error === "string" ? (payload.error as string) : undefined;
+}
+
+export async function invokeFunction<T = unknown>(
+  name: string,
+  body?: Record<string, unknown>
+): Promise<{ data: T | null; error: string | null }> {
+  const { data, error } = await supabase.functions.invoke<T>(name, body ? { body } : {});
+  if (!error) return { data, error: null };
+  return { data: null, error: friendlyError({ code: await functionErrorCode(error) }) };
 }

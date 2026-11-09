@@ -1,4 +1,3 @@
-// Componentes no estilo "giz" das artes do app: contorno preto grosso, papel claro e vermelho.
 import React from "react";
 import {
   ActivityIndicator,
@@ -24,7 +23,6 @@ type ChalkButtonProps = {
   variant?: "primary" | "secondary";
 };
 
-// Imita os botões da barra de navegação: borda preta, filete branco e fundo vermelho.
 export function ChalkButton({
   label,
   onPress,
@@ -85,7 +83,6 @@ export function ChalkCard({
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
-// A mesma linha de giz que fica acima da barra de navegação.
 export function ChalkLine({ style }: { style?: StyleProp<ViewStyle> }) {
   return (
     <View style={[styles.lineWrapper, style]}>

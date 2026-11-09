@@ -27,21 +27,14 @@ import {
 } from "phosphor-react-native";
 import { useSession } from "../../contexts/SessionContext";
 import { colors } from "../../theme";
-import { supabase } from "../../lib/supabase";
-
-// NOTE: For real OS notifications on mobile, install expo-notifications:
-//   npx expo install expo-notifications
-// Then in sendTestNotification(), swap the Alert.alert(...) branch with:
-//   await Notifications.scheduleNotificationAsync({
-//     content: { title: "My Little Frank", body: "test notification" },
-//     trigger: null,
-//   });
+import { invokeFunction, supabase } from "../../lib/supabase";
+import { unregisterPushToken } from "../../lib/pushNotifications";
 
 const SETTINGS_KEY = "@my_little_frank/settings";
 
 type Settings = {
-  musicVolume: number; // 0..1
-  sfxVolume: number; // 0..1
+  musicVolume: number;
+  sfxVolume: number;
   notificationsEnabled: boolean;
   notificationIntervalHours: number;
   notificationIntervalMinutes: number;
@@ -58,11 +51,6 @@ const DEFAULT_SETTINGS: Settings = {
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
-
-// ---------------------------------------------------------------------------
-// Cross-platform dialogs
-// (react-native-web's Alert.alert drops the button list — so use window.* on web)
-// ---------------------------------------------------------------------------
 
 function showAlert(title: string, message?: string) {
   if (Platform.OS === "web") {
@@ -99,10 +87,6 @@ function confirmDestructive(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Reusable bits
-// ---------------------------------------------------------------------------
-
 function SettingRow({
   icon,
   label,
@@ -134,7 +118,6 @@ function VolumeSlider({
 }) {
   const [trackWidth, setTrackWidth] = useState(0);
 
-  // 5% steps → 20 discrete positions across the track.
   const applyX = (x: number) => {
     if (trackWidth === 0) return;
     const raw = Math.max(0, Math.min(1, x / trackWidth));
@@ -196,10 +179,6 @@ function DangerRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Screen
-// ---------------------------------------------------------------------------
-
 export default function Profile() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -208,17 +187,15 @@ export default function Profile() {
   const email = session?.user?.email ?? null;
 
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
-  // Raw 4-digit string, e.g. "1234" → displayed "12 : 34".
   const [timeDigits, setTimeDigits] = useState(
     pad2(DEFAULT_SETTINGS.notificationIntervalHours) +
     pad2(DEFAULT_SETTINGS.notificationIntervalMinutes)
   );
   const [nameDraft, setNameDraft] = useState(monster?.name ?? "");
   const [savingName, setSavingName] = useState(false);
-  const [nameInputWidth, setNameInputWidth] = useState(0); // <-- new
+  const [nameInputWidth, setNameInputWidth] = useState(0);
   const [busy, setBusy] = useState<"account" | "monster" | null>(null);
 
-  // Load persisted settings.
   useEffect(() => {
     AsyncStorage.getItem(SETTINGS_KEY)
       .then((raw) => {
@@ -239,13 +216,11 @@ export default function Profile() {
             pad2(merged.notificationIntervalMinutes)
           );
         } catch {
-          // ignore corrupt storage
         }
       })
       .catch(() => { });
   }, []);
 
-  // Keep the name draft in sync when the monster loads / changes.
   useEffect(() => {
     setNameDraft(monster?.name ?? "");
   }, [monster?.id, monster?.name]);
@@ -263,10 +238,6 @@ export default function Profile() {
     []
   );
 
-  // -------------------------------------------------------------------------
-  // Notifications
-  // -------------------------------------------------------------------------
-
   const sendTestNotification = useCallback(async () => {
     const message = "notificação placeholder";
     if (Platform.OS === "web") {
@@ -275,7 +246,6 @@ export default function Profile() {
       }
       return;
     }
-    // No expo-notifications installed — fall back to an in-app alert.
     Alert.alert("My Little Frank", message);
   }, []);
 
@@ -294,7 +264,6 @@ export default function Profile() {
   }, []);
 
   const commitTime = useCallback(() => {
-    // Require exactly 4 digits — standard HH:MM field behaviour.
     if (timeDigits.length !== 4) {
       setTimeDigits(
         pad2(settings.notificationIntervalHours) +
@@ -328,10 +297,6 @@ export default function Profile() {
     settings.notificationIntervalMinutes,
   ]);
 
-  // -------------------------------------------------------------------------
-  // Monster name
-  // -------------------------------------------------------------------------
-
   const saveMonsterName = useCallback(async () => {
     if (!monster) return;
     const trimmed = nameDraft.trim();
@@ -357,10 +322,6 @@ export default function Profile() {
     }
     await refreshMonster();
   }, [monster, nameDraft, refreshMonster]);
-
-  // -------------------------------------------------------------------------
-  // Delete monster data (leave pairing) -> /pair
-  // -------------------------------------------------------------------------
 
   const handleDeleteMonster = useCallback(async () => {
     if (!monster || busy) return;
@@ -415,10 +376,6 @@ export default function Profile() {
     }
   }, [busy, monster, refreshMonster, router]);
 
-  // -------------------------------------------------------------------------
-  // Delete account
-  // -------------------------------------------------------------------------
-
   const handleDeleteAccount = useCallback(async () => {
     if (busy) return;
 
@@ -431,23 +388,13 @@ export default function Profile() {
 
     setBusy("account");
     try {
-      const { error: rpcError } = await supabase.rpc("delete_user_account");
-
-      if (rpcError) {
-        console.warn("delete_user_account RPC falhou:", rpcError.message);
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (user) {
-          await supabase.from("monsters").delete().eq("created_by", user.id);
-          await supabase
-            .from("monster_members")
-            .delete()
-            .eq("user_id", user.id);
-        }
+      const { error } = await invokeFunction("delete-account");
+      if (error) {
+        showAlert("Erro", error);
+        return;
       }
 
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: "local" });
     } catch (err: any) {
       showAlert("Erro", err?.message ?? "Não foi possível apagar a conta.");
     } finally {
@@ -455,24 +402,19 @@ export default function Profile() {
     }
   }, [busy]);
 
-  // -------------------------------------------------------------------------
-  // Log out
-  // -------------------------------------------------------------------------
-
   const handleLogOut = useCallback(async () => {
+    await unregisterPushToken();
     const { error } = await supabase.auth.signOut();
     if (error) {
       showAlert("Erro", error.message);
     }
   }, []);
 
-  // Whether the "Salvar" button should be shown next to the name field.
   const trimmedName = nameDraft.trim();
   const showSaveButton =
     savingName ||
     (!!monster && trimmedName.length >= 1 && trimmedName !== monster.name);
 
-  // Split into hours/minutes for display.
   const hoursDisplay = timeDigits.slice(0, 2);
   const minutesDisplay = timeDigits.slice(2, 4);
 
@@ -581,9 +523,6 @@ export default function Profile() {
             label="Nome do Frank"
           >
             <View style={styles.inputRow}>
-              {/* Invisible Text measures the current name so the input
-                  can hug it exactly. Falls back to placeholder "Frank"
-                  when empty so the box never collapses. */}
               <Text
                 onLayout={(e) =>
                   setNameInputWidth(Math.ceil(e.nativeEvent.layout.width))
@@ -602,9 +541,9 @@ export default function Profile() {
                 style={[
                   styles.textInput,
                   {
-                    flexGrow: 1,   // fill available space when there is any
-                    flexShrink: 1, // shrink when the row is over-constrained
-                    minWidth: Math.max(nameInputWidth + 28, 80), // never below hug-content
+                    flexGrow: 1,
+                    flexShrink: 1,
+                    minWidth: Math.max(nameInputWidth + 28, 80),
                   },
                 ]}
                 placeholder="Frank"
@@ -657,10 +596,6 @@ export default function Profile() {
     </View>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
   screen: {
@@ -727,7 +662,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "900",
   },
-  // Row: [icon + label]  <---->  [control]
   settingRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -756,7 +690,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "flex-end",
   },
-  // Slider
   sliderRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -798,7 +731,6 @@ const styles = StyleSheet.create({
     width: 44,
     textAlign: "right",
   },
-  // Inputs
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -817,7 +749,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     backgroundColor: "transparent",
   },
-  // HH : MM combined box
   timeBox: {
     borderWidth: 2,
     borderColor: colors.ink,
@@ -846,8 +777,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginHorizontal: 6,
   },
-  // The TextInput is an invisible overlay that captures typing;
-  // the styled View above it renders the formatted display.
   timeHiddenInput: {
     ...StyleSheet.absoluteFillObject,
     opacity: 0.01,
@@ -879,7 +808,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "900",
   },
-  // Danger
   dangerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -898,7 +826,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     flexShrink: 1,
   },
-  // Logout
   logoutBtn: {
     flexDirection: "row",
     alignItems: "center",

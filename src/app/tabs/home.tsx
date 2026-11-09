@@ -17,28 +17,9 @@ import {
 import { useSession } from "../../contexts/SessionContext";
 import MonsterStats from "../../components/MonsterStats";
 import Frank, { type FrankHandle } from "../components/Frank";
-import { supabase } from "@/src/lib/supabase";
+import { friendlyError, invokeFunction, supabase } from "@/src/lib/supabase";
 import { colors } from "../../theme";
 
-// --- pairing questions -----------------------------------------------------
-
-const QUESTIONS = [
-  "Qual sua memória favorita juntos?",
-  "Qual é a minha comida favorita?",
-  "Qual é a melhor parte do nosso tempo juntos?",
-  "Que animal você vê em mim?",
-  "Que personagem eu seria?",
-  "Qual é a minha estação do ano preferida?",
-];
-
-function pickRandomQuestion(exclude?: string): string {
-  const pool = exclude ? QUESTIONS.filter((q) => q !== exclude) : QUESTIONS;
-  return pool[Math.floor(Math.random() * pool.length)];
-}
-
-// Reference size for positioning the tappable squares. Adjust the
-// `right/left/bottom` values in `Home` so they line up with the
-// interactive visual elements on `telaPrincipal.jpg`.
 const BASE_WIDTH = 800;
 const BASE_HEIGHT = 1200;
 const SQUARE_BASE = 256;
@@ -65,8 +46,6 @@ function formatDate(ts: string): string {
     return ts;
   }
 }
-
-// --- pair question modal ---------------------------------------------------
 
 function PairingModal({
   monsterId,
@@ -122,15 +101,12 @@ function PairingModal({
     setMembers((membersRes.data ?? []).map((m: any) => m.user_id as string));
 
     if (!pairingRes.data) {
-      const q = pickRandomQuestion();
-      const { error: insErr } = await supabase
-        .from("monster_pairing")
-        .upsert(
-          { monster_id: monsterId, question: q, answers: {} },
-          { onConflict: "monster_id", ignoreDuplicates: true }
-        );
-      if (insErr) {
-        setError(insErr.message);
+      const { error: ensureErr } = await supabase.rpc(
+        "ensure_pairing_question",
+        { monster_uuid: monsterId }
+      );
+      if (ensureErr) {
+        setError(friendlyError(ensureErr));
         setLoading(false);
         return;
       }
@@ -195,6 +171,11 @@ function PairingModal({
       setError(rpcErr.message);
       return;
     }
+    void invokeFunction("notify-partner", { monster_id: monsterId }).then(
+      ({ error: notifyErr }) => {
+        if (notifyErr) console.warn("notify-partner falhou:", notifyErr);
+      }
+    );
     setDraft("");
     await load();
   };
@@ -209,17 +190,12 @@ function PairingModal({
     (m) => !answeredIds.includes(m)
   ).length;
 
-  // Every close path (X, overlay tap, Android back) goes through here.
-  // If the user has seen both answers, we archive + reset the question
-  // before closing — replacing the old "Próxima pergunta" button.
   const handleClose = useCallback(async () => {
     if (submitting) return;
 
     if (pairing && allAnswered && myAnswer) {
       setSubmitting(true);
       try {
-        // Re-fetch live state so we don't double-advance if the other
-        // caregiver already closed first (or beat us to the archive).
         const { data: live } = await supabase
           .from("monster_pairing")
           .select("question, answers")
@@ -237,10 +213,9 @@ function PairingModal({
             !!currentUserId && liveIds.includes(currentUserId);
 
           if (liveAll && liveIMine) {
-            const q = pickRandomQuestion(pairing.question);
             const { error: rpcErr } = await supabase.rpc(
               "archive_and_reset_pairing",
-              { monster_uuid: monsterId, next_question: q }
+              { monster_uuid: monsterId }
             );
             if (rpcErr) {
               console.warn(
@@ -337,9 +312,6 @@ function PairingModal({
                       </View>
                     )}
                   </ScrollView>
-                  {/* <Text style={styles.hintText}>
-                    Feche para a próxima pergunta.
-                  </Text> */}
                 </>
               ) : myAnswer ? (
                 <View style={styles.waitingBox}>
@@ -389,8 +361,6 @@ function PairingModal({
     </Modal>
   );
 }
-
-// --- diário (history) modal ------------------------------------------------
 
 function DiaryModal({
   monsterId,
@@ -524,8 +494,6 @@ function DiaryModal({
   );
 }
 
-// --- home screen -----------------------------------------------------------
-
 export default function Home() {
   const { width, height } = useWindowDimensions();
   const { monster } = useSession();
@@ -578,7 +546,6 @@ export default function Home() {
         <>
           <Frank ref={frank} monsterId={monster.id} placement="home" />
 
-          {/* Pair-question hotspot (red) — top-right */}
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={() => setPairingOpen(true)}
@@ -595,7 +562,6 @@ export default function Home() {
             ]}
           />
 
-          {/* Diário hotspot (green) — bottom-left */}
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={() => setDiaryOpen(true)}
@@ -633,11 +599,9 @@ const styles = StyleSheet.create({
   background: { position: "absolute", top: 0, left: 0 },
   statsSlot: { position: "absolute" },
 
-  /* transparent tappable hotspots on the home background */
   squareRed: { position: "absolute", backgroundColor: "rgba(255,0,0,0)" },
   squareGreen: { position: "absolute", backgroundColor: "rgba(0,255,0,0)" },
 
-  /* ---- modal ---- */
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.55)",
@@ -666,7 +630,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
 
-  /* ---- popup ---- */
   popup: {
     backgroundColor: colors.background,
     borderRadius: 16,
@@ -710,7 +673,6 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
 
-  /* ---- input ---- */
   input: {
     borderWidth: 2,
     borderColor: colors.ink,
@@ -724,7 +686,6 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
   },
 
-  /* ---- primary button (Enviar) ---- */
   primaryBtn: {
     backgroundColor: colors.ink,
     paddingVertical: 14,
@@ -739,7 +700,6 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 
-  /* ---- answers list (pair modal) ---- */
   answersScroll: { maxHeight: 260 },
   answerCard: {
     borderWidth: 2,
@@ -762,7 +722,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
-  /* ---- waiting (pair modal) ---- */
   waitingBox: { gap: 12, alignItems: "center" },
   myAnswerBox: {
     borderWidth: 2,
@@ -790,7 +749,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  /* ---- diário (history) ---- */
   historyScroll: { maxHeight: 420 },
   historyCard: {
     borderWidth: 2,

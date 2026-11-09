@@ -3,7 +3,6 @@ import { StyleSheet, Text, View } from "react-native";
 import { Monster, monsterAgeInDays } from "../lib/supabase";
 import { colors } from "../theme";
 
-// Placa com os dados do monstrinho. As barras vão de 0 (precisa de cuidado) a 100 (satisfeito).
 export default function MonsterStats({ monster }: { monster: Monster }) {
   return (
     <View style={styles.card}>
