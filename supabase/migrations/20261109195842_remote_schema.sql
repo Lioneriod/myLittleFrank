@@ -114,7 +114,6 @@ begin
   from public.monster_pairing
   where monster_id = monster_uuid;
 
-  -- Only archive if there's an actual question with at least one answer.
   if current_question is not null
      and current_answers is not null
      and current_answers <> '{}'::jsonb then
@@ -174,7 +173,6 @@ begin
     raise exception 'Not authenticated';
   end if;
 
-  -- Must be a member to delete (prevents random users from nuking monsters).
   if not exists (
     select 1 from public.monster_members
     where monster_id = monster_uuid and user_id = uid
@@ -182,8 +180,6 @@ begin
     raise exception 'You are not a member of this monster';
   end if;
 
-  -- Deleting the monster cascades to monster_members
-  -- (FK: monster_members_monster_id_fkey ... on delete CASCADE).
   delete from public.monsters where id = monster_uuid;
 end;
 $function$;
@@ -200,11 +196,8 @@ begin
   if uid is null then
     raise exception 'Not authenticated';
   end if;
-  -- Explicit cleanup (auth.users cascade would handle this anyway)
   delete from public.monster_members where user_id = uid;
   delete from public.monsters where created_by = uid;
-  -- Delete the auth user; requires the function to be owned by a role with
-  -- write access to auth.users (the SQL editor runs as postgres by default).
   delete from auth.users where id = uid;
 end;
 $function$;

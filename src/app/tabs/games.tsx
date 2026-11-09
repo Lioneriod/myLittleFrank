@@ -11,25 +11,19 @@ import {
   View,
 } from "react-native";
 
-/** Reference screen the base size was designed at. */
 const BASE_WIDTH = 800;
 const BASE_HEIGHT = 1200;
 
-/** Base square side length at BASE_WIDTH × BASE_HEIGHT. */
 const SQUARE_BASE = 256 + 128;
 
-/** Gap between tic-tac-toe cells. */
 const GAP = 6;
 
-/** Number of questions in the math quiz. */
 const TOTAL_QUESTIONS = 5;
 
 type GameKey = "red" | "blue";
 type Player = "pink" | "blue";
 type Cell = Player | null;
 type Outcome = Player | "draw" | null;
-
-/* ============================ TIC TAC TOE ============================ */
 
 const WIN_LINES: readonly [number, number, number][] = [
   [0, 1, 2], [3, 4, 5], [6, 7, 8],
@@ -123,8 +117,6 @@ function TicTacToe({ size }: { size: number }) {
     </View>
   );
 }
-
-/* ============================ MATH QUIZ ============================= */
 
 type Question = {
   text: string;
@@ -326,8 +318,6 @@ function MathQuiz() {
   );
 }
 
-/* ============================== SCREEN ============================== */
-
 export default function Games() {
   const { width, height } = useWindowDimensions();
   const [openGame, setOpenGame] = useState<GameKey | null>(null);
@@ -352,7 +342,6 @@ export default function Games() {
       style={[styles.background, { width, height }]}
       resizeMode="stretch"
     >
-      {/* Red: 8% from left, 60% from bottom — abre o jogo da velha */}
       <TouchableOpacity
         activeOpacity={0.7}
         onPress={() => setOpenGame("red")}
@@ -370,7 +359,6 @@ export default function Games() {
         ]}
       />
 
-      {/* Blue: 50% from left, 25% from bottom — abre o quiz de matemática */}
       <TouchableOpacity
         activeOpacity={0.7}
         onPress={() => setOpenGame("blue")}
@@ -429,7 +417,6 @@ const styles = StyleSheet.create({
   redSquare: { backgroundColor: "rgba(255, 0, 0, 0)" },
   blueSquare: { backgroundColor: "rgba(0, 0, 255, 0)" },
 
-  /* ---- modal ---- */
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.55)",
@@ -458,7 +445,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
 
-  /* ---- popup (green background shared by both games) ---- */
   popup: {
     backgroundColor: "#a5d6a7",
     borderRadius: 16,
@@ -466,7 +452,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
 
-  /* ---- shared game container ---- */
   gameContainer: {
     flex: 1,
     alignItems: "center",
@@ -476,7 +461,6 @@ const styles = StyleSheet.create({
   gameTitle: { fontSize: 20, fontWeight: "700", color: "#222" },
   statusText: { fontSize: 16, color: "#444", minHeight: 22 },
 
-  /* ---- tic tac toe ---- */
   board: { flexDirection: "row", flexWrap: "wrap", gap: GAP },
   cellBase: {
     borderRadius: 6,
@@ -488,7 +472,6 @@ const styles = StyleSheet.create({
   cellBlue: { backgroundColor: "#2196f3" },
   symbol: { fontWeight: "800", color: "#fff" },
 
-  /* ---- reset / replay button (shared) ---- */
   resetButton: {
     paddingHorizontal: 24,
     paddingVertical: 10,
@@ -498,7 +481,6 @@ const styles = StyleSheet.create({
   resetButtonPressed: { backgroundColor: "#111" },
   resetText: { color: "#fff", fontWeight: "600" },
 
-  /* ---- math quiz: question view ---- */
   progressText: { fontSize: 14, color: "#333" },
   questionBox: {
     paddingVertical: 20,
@@ -527,7 +509,6 @@ const styles = StyleSheet.create({
   optionText: { fontSize: 24, fontWeight: "700", color: "#333" },
   optionTextHighlighted: { color: "#fff" },
 
-  /* ---- math quiz: summary view ---- */
   summaryContainer: {
     flex: 1,
     alignItems: "center",

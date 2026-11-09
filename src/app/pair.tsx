@@ -20,11 +20,9 @@ const CODE_LENGTH = 6;
 
 type Busy = "create" | "join" | "continue" | null;
 
-// Primeiro acesso: gera o código de um monstrinho novo ou entra com o código de alguém.
 export default function Pair() {
   const { session, monster, refreshMonster } = useSession();
   const insets = useSafeAreaInsets();
-  // Monstrinho recém-criado: fica nesta tela mostrando o código até o usuário continuar.
   const [created, setCreated] = useState<Monster | null>(null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState<Busy>(null);
@@ -59,7 +57,6 @@ export default function Pair() {
       setError(friendlyError(error));
       return;
     }
-    // Com o monstrinho carregado no contexto, o Redirect acima leva para a tela inicial.
     if (!(await refreshMonster())) {
       setBusy(null);
       setError("Você entrou, mas não conseguimos carregar o monstrinho. Tente de novo.");

@@ -14,8 +14,6 @@ if (!supabaseUrl || !supabaseKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
-    // No celular a sessão fica salva no AsyncStorage, então o usuário só faz login uma vez.
-    // Na web o supabase-js já usa o localStorage.
     ...(Platform.OS !== "web" ? { storage: AsyncStorage } : {}),
     autoRefreshToken: true,
     persistSession: true,
@@ -23,7 +21,6 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
   },
 });
 
-// Só renova o token enquanto o app está em primeiro plano.
 if (Platform.OS !== "web") {
   AppState.addEventListener("change", (state) => {
     if (state === "active") {
@@ -46,7 +43,6 @@ export type Monster = {
 
 export const MONSTER_COLUMNS = "id, name, invite_code, hunger, thirst, affection, created_at";
 
-// Dia 1 é o dia em que o monstrinho foi criado.
 export function monsterAgeInDays(monster: Monster) {
   const ms = Date.now() - new Date(monster.created_at).getTime();
   return Math.floor(ms / 86_400_000) + 1;
