@@ -1,6 +1,6 @@
 import "react-native-url-polyfill/auto";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, FunctionsHttpError } from "@supabase/supabase-js";
 import { AppState, Platform } from "react-native";
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -72,4 +72,19 @@ export function friendlyError(error: unknown) {
     (message && ERROR_MESSAGES[message]) ||
     "Algo deu errado. Verifique sua conexão e tente de novo."
   );
+}
+
+async function functionErrorCode(error: unknown) {
+  if (!(error instanceof FunctionsHttpError)) return undefined;
+  const payload = await (error.context as Response).json().catch(() => null);
+  return typeof payload?.error === "string" ? (payload.error as string) : undefined;
+}
+
+export async function invokeFunction<T = unknown>(
+  name: string,
+  body?: Record<string, unknown>
+): Promise<{ data: T | null; error: string | null }> {
+  const { data, error } = await supabase.functions.invoke<T>(name, body ? { body } : {});
+  if (!error) return { data, error: null };
+  return { data: null, error: friendlyError({ code: await functionErrorCode(error) }) };
 }

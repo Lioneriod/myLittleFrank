@@ -27,7 +27,7 @@ import {
 } from "phosphor-react-native";
 import { useSession } from "../../contexts/SessionContext";
 import { colors } from "../../theme";
-import { supabase } from "../../lib/supabase";
+import { invokeFunction, supabase } from "../../lib/supabase";
 
 // NOTE: For real OS notifications on mobile, install expo-notifications:
 //   npx expo install expo-notifications
@@ -431,23 +431,13 @@ export default function Profile() {
 
     setBusy("account");
     try {
-      const { error: rpcError } = await supabase.rpc("delete_user_account");
-
-      if (rpcError) {
-        console.warn("delete_user_account RPC falhou:", rpcError.message);
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (user) {
-          await supabase.from("monsters").delete().eq("created_by", user.id);
-          await supabase
-            .from("monster_members")
-            .delete()
-            .eq("user_id", user.id);
-        }
+      const { error } = await invokeFunction("delete-account");
+      if (error) {
+        showAlert("Erro", error);
+        return;
       }
 
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: "local" });
     } catch (err: any) {
       showAlert("Erro", err?.message ?? "Não foi possível apagar a conta.");
     } finally {
