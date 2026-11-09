@@ -13,9 +13,13 @@ export type FrankPlacement = {
 
 export const FRANK_PLACEMENTS = {
   default: { bottomAnchorRatio: 0.10, left: 0.5 },
-  home: { bottomAnchorRatio: 0.06, left: 0.5 },
-  closet: { bottomAnchorRatio: 0.02, left: 0.7 },
 } as const satisfies Record<string, FrankPlacement>;
+
+export type FrankBox = {
+  centerX: number;
+  feetY: number;
+  width: number;
+};
 
 export type FrankPlacementName = keyof typeof FRANK_PLACEMENTS;
 
@@ -28,6 +32,7 @@ export type FrankHandle = {
 
 const FRANK_BASE_WIDTH = 64 * 9 + 16 * 3;
 const FRANK_BASE_HEIGHT = 64 * 12 + 16 * 4;
+const FRANK_FEET_RATIO = 1590 / 2048;
 
 const FRANK_MAX_WIDTH_RATIO = 1;
 const FRANK_MAX_HEIGHT_RATIO = FRANK_MAX_WIDTH_RATIO * 3 / 4; 
@@ -50,6 +55,7 @@ function computeFrankSize(screenWidth: number, screenHeight: number) {
 type Props = {
   monsterId: string;
   placement?: FrankPlacementName | FrankPlacement;
+  box?: FrankBox;
 };
 
 function resolvePlacement(p: FrankPlacementName | FrankPlacement | undefined): FrankPlacement {
@@ -58,11 +64,13 @@ function resolvePlacement(p: FrankPlacementName | FrankPlacement | undefined): F
   return p;
 }
 
-const Frank = forwardRef<FrankHandle, Props>(({ monsterId, placement }, ref) => {
+const Frank = forwardRef<FrankHandle, Props>(({ monsterId, placement, box }, ref) => {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const { bottomAnchorRatio, left: leftAnchorRatio } = resolvePlacement(placement);
 
-  const { width: frankWidth, height: frankHeight } = computeFrankSize(screenWidth, screenHeight);
+  const { width: frankWidth, height: frankHeight } = box
+    ? { width: box.width, height: (box.width * FRANK_BASE_HEIGHT) / FRANK_BASE_WIDTH }
+    : computeFrankSize(screenWidth, screenHeight);
 
   useEffect(() => {
     void frankStore.hydrate(monsterId);
@@ -84,8 +92,9 @@ const Frank = forwardRef<FrankHandle, Props>(({ monsterId, placement }, ref) => 
     [monsterId],
   );
 
-  const left = screenWidth * leftAnchorRatio - frankWidth / 2;
-  const bottom = screenHeight * bottomAnchorRatio;
+  const position = box
+    ? { left: box.centerX - frankWidth / 2, top: box.feetY - frankHeight * FRANK_FEET_RATIO }
+    : { left: screenWidth * leftAnchorRatio - frankWidth / 2, bottom: screenHeight * bottomAnchorRatio };
 
   const layerStyle = {
     position: "absolute" as const,
@@ -98,7 +107,7 @@ const Frank = forwardRef<FrankHandle, Props>(({ monsterId, placement }, ref) => 
   return (
     <View
       pointerEvents="none"
-      style={[styles.container, { left, bottom, width: frankWidth, height: frankHeight }]}
+      style={[styles.container, position, { width: frankWidth, height: frankHeight }]}
     >
       <Image source={resolveFrankSource(parts.skin)} style={layerStyle} resizeMode="contain" />
       <Image source={resolveFrankSource(parts.currentBottom)} style={layerStyle} resizeMode="contain" />

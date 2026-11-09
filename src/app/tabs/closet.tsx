@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   Image,
-  ImageBackground,
   Modal,
   Pressable,
   ScrollView,
@@ -14,10 +13,18 @@ import Frank, { type FrankHandle, type FrankPartKey } from "../components/Frank"
 import { FRANK_ASSET_REGISTRY, resolveFrankSource } from "../components/frankAssets";
 import { frankStore } from "../components/frankStore";
 import { useSession } from "../../contexts/SessionContext";
+import Scene, { type SceneArt, type SceneRect } from "../../components/Scene";
 
-const CLOSET_RECT_ORIG = { x: 68, y: 184, w: 484, h: 944 } as const;
+const CLOSET_ART: SceneArt = {
+  source: require("../assets/bgs/telaArmario.jpg"),
+  width: 1200,
+  height: 3158,
+  anchorY: 3000,
+  anchorTo: 1,
+};
 
-const BACKGROUND = require("../assets/bgs/telaArmario.jpg");
+const CLOSET_SPOT: SceneRect = { x: 68, y: 1828, w: 484, h: 944 };
+const FRANK_FEET = { x: 840, y: 2919 };
 
 const TOTAL_SLOTS = 9;
 
@@ -80,17 +87,6 @@ export default function Closet() {
     ),
   );
 
-  const rect = useMemo(() => {
-    const scaleX = width / BACKGROUND.width;
-    const scaleY = height / BACKGROUND.height;
-    return {
-      left: CLOSET_RECT_ORIG.x * scaleX,
-      top: CLOSET_RECT_ORIG.y * scaleY,
-      width: CLOSET_RECT_ORIG.w * scaleX,
-      height: CLOSET_RECT_ORIG.h * scaleY,
-    };
-  }, [width, height]);
-
   const spriteLayoutHeight = useMemo(
     () => computeCellInnerHeight(width) * CELL_IMAGE_RATIO,
     [width],
@@ -107,20 +103,31 @@ export default function Closet() {
   }, []);
 
   return (
-    <ImageBackground
-      source={BACKGROUND}
-      style={[styles.background, { width, height }]}
-      resizeMode="stretch"
-    >
-      {monster && <Frank ref={frank} monsterId={monster.id} placement="closet" />}
+    <>
+      <Scene art={CLOSET_ART}>
+        {(scene) => {
+          const feet = scene.point(FRANK_FEET.x, FRANK_FEET.y);
+          return (
+            <>
+              {monster && (
+                <Frank
+                  ref={frank}
+                  monsterId={monster.id}
+                  box={{ centerX: feet.x, feetY: feet.y, width: CLOSET_ART.width * scene.scale }}
+                />
+              )}
 
-      <Pressable
-        onPress={openCloset}
-        accessibilityRole="button"
-        accessibilityLabel="Open closet"
-        hitSlop={8}
-        style={[styles.closet, rect]}
-      />
+              <Pressable
+                onPress={openCloset}
+                accessibilityRole="button"
+                accessibilityLabel="Open closet"
+                hitSlop={8}
+                style={[styles.closet, scene.rect(CLOSET_SPOT)]}
+              />
+            </>
+          );
+        }}
+      </Scene>
 
       <Modal
         visible={closetOpen}
@@ -205,12 +212,11 @@ export default function Closet() {
           </View>
         </View>
       </Modal>
-    </ImageBackground>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  background: { position: "absolute", top: 0, left: 0 },
   closet: {
     position: "absolute",
   },

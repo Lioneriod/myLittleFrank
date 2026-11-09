@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  ImageBackground,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -12,17 +11,25 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  useWindowDimensions,
 } from "react-native";
 import { useSession } from "../../contexts/SessionContext";
 import MonsterStats from "../../components/MonsterStats";
 import Frank, { type FrankHandle } from "../components/Frank";
+import Scene, { type SceneArt, type SceneRect } from "../../components/Scene";
 import { friendlyError, invokeFunction, supabase } from "@/src/lib/supabase";
 import { colors } from "../../theme";
 
-const BASE_WIDTH = 800;
-const BASE_HEIGHT = 1200;
-const SQUARE_BASE = 256;
+const HOME_ART: SceneArt = {
+  source: require("../assets/bgs/telaPrincipal.jpg"),
+  width: 1200,
+  height: 3171,
+  anchorY: 3000,
+  anchorTo: 1,
+};
+
+const DIARY_SPOT: SceneRect = { x: 20, y: 1809, w: 390, h: 270 };
+const PAIRING_SPOT: SceneRect = { x: 760, y: 2024, w: 370, h: 330 };
+const FRANK_FEET = { x: 600, y: 2869 };
 
 type PairingRow = { question: string; answers: Record<string, string> };
 
@@ -495,7 +502,6 @@ function DiaryModal({
 }
 
 export default function Home() {
-  const { width, height } = useWindowDimensions();
   const { monster } = useSession();
   const frank = useRef<FrankHandle>(null);
   const [pairingOpen, setPairingOpen] = useState(false);
@@ -531,53 +537,42 @@ export default function Home() {
     };
   }, [monster?.id]);
 
-  const scaleX = width / BASE_WIDTH;
-  const scaleY = height / BASE_HEIGHT;
-  const squareW = SQUARE_BASE * scaleX;
-  const squareH = SQUARE_BASE * scaleY;
-
   return (
-    <ImageBackground
-      source={require("../assets/bgs/telaPrincipal.jpg")}
-      style={[styles.background, { width, height }]}
-      resizeMode="stretch"
-    >
+    <>
+      <Scene art={HOME_ART}>
+        {(scene) => {
+          if (!monster) return null;
+          const feet = scene.point(FRANK_FEET.x, FRANK_FEET.y);
+          return (
+            <>
+              <Frank
+                ref={frank}
+                monsterId={monster.id}
+                box={{ centerX: feet.x, feetY: feet.y, width: HOME_ART.width * scene.scale }}
+              />
+
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setPairingOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Abrir pergunta para cuidadores"
+                style={[styles.squareRed, scene.rect(PAIRING_SPOT)]}
+              />
+
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setDiaryOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Abrir diário"
+                style={[styles.squareGreen, scene.rect(DIARY_SPOT)]}
+              />
+            </>
+          );
+        }}
+      </Scene>
+
       {monster && (
         <>
-          <Frank ref={frank} monsterId={monster.id} placement="home" />
-
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={() => setPairingOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Abrir pergunta para cuidadores"
-            style={[
-              styles.squareRed,
-              {
-                width: squareW,
-                height: squareH,
-                right: width * 0.08,
-                bottom: height * 0.55,
-              },
-            ]}
-          />
-
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={() => setDiaryOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Abrir diário"
-            style={[
-              styles.squareGreen,
-              {
-                width: squareW,
-                height: squareH,
-                left: width * 0.02,
-                bottom: height * 0.68,
-              },
-            ]}
-          />
-
           <PairingModal
             monsterId={monster.id}
             visible={pairingOpen}
@@ -591,12 +586,11 @@ export default function Home() {
           />
         </>
       )}
-    </ImageBackground>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  background: { position: "absolute", top: 0, left: 0 },
   statsSlot: { position: "absolute" },
 
   squareRed: { position: "absolute", backgroundColor: "rgba(255,0,0,0)" },

@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ImageBackground,
   Modal,
   Pressable,
   ScrollView,
@@ -10,11 +9,18 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import Scene, { type SceneArt, type SceneRect } from "../../components/Scene";
 
-const BASE_WIDTH = 800;
-const BASE_HEIGHT = 1200;
+const GAMES_ART: SceneArt = {
+  source: require("../assets/bgs/telaJogos.jpg"),
+  width: 1200,
+  height: 3000,
+  anchorY: 1500,
+  anchorTo: 0.5,
+};
 
-const SQUARE_BASE = 256 + 128;
+const TIC_TAC_TOE_SPOT: SceneRect = { x: 80, y: 853, w: 530, h: 630 };
+const MATH_QUIZ_SPOT: SceneRect = { x: 680, y: 1453, w: 470, h: 450 };
 
 const GAP = 6;
 
@@ -322,12 +328,6 @@ export default function Games() {
   const { width, height } = useWindowDimensions();
   const [openGame, setOpenGame] = useState<GameKey | null>(null);
 
-  const scaleX = width / BASE_WIDTH;
-  const scaleY = height / BASE_HEIGHT;
-
-  const squareW = SQUARE_BASE * scaleX;
-  const squareH = SQUARE_BASE * scaleY;
-
   const closeGame = useCallback(() => setOpenGame(null), []);
 
   const popupW = width * 0.9;
@@ -337,44 +337,28 @@ export default function Games() {
   const boardSize = Math.min(contentW, contentH - 150);
 
   return (
-    <ImageBackground
-      source={require("../assets/bgs/telaJogos.jpg")}
-      style={[styles.background, { width, height }]}
-      resizeMode="stretch"
-    >
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={() => setOpenGame("red")}
-        accessibilityRole="button"
-        accessibilityLabel="Abrir jogo da velha"
-        style={[
-          styles.square,
-          styles.redSquare,
-          {
-            width: squareW,
-            height: squareH,
-            left: width * 0.08,
-            bottom: height * 0.6,
-          },
-        ]}
-      />
+    <>
+      <Scene art={GAMES_ART}>
+        {(scene) => (
+          <>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => setOpenGame("red")}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir jogo da velha"
+              style={[styles.square, styles.redSquare, scene.rect(TIC_TAC_TOE_SPOT)]}
+            />
 
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={() => setOpenGame("blue")}
-        accessibilityRole="button"
-        accessibilityLabel="Abrir quiz de matemática"
-        style={[
-          styles.square,
-          styles.blueSquare,
-          {
-            width: squareW,
-            height: squareH,
-            left: width * 0.50,
-            bottom: height * 0.25,
-          },
-        ]}
-      />
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => setOpenGame("blue")}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir quiz de matemática"
+              style={[styles.square, styles.blueSquare, scene.rect(MATH_QUIZ_SPOT)]}
+            />
+          </>
+        )}
+      </Scene>
 
       <Modal
         visible={openGame !== null}
@@ -407,12 +391,11 @@ export default function Games() {
           </View>
         </View>
       </Modal>
-    </ImageBackground>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  background: { position: "absolute", top: 0, left: 0 },
   square: { position: "absolute" },
   redSquare: { backgroundColor: "rgba(255, 0, 0, 0)" },
   blueSquare: { backgroundColor: "rgba(0, 0, 255, 0)" },
