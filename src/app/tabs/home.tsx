@@ -17,7 +17,7 @@ import {
 import { useSession } from "../../contexts/SessionContext";
 import MonsterStats from "../../components/MonsterStats";
 import Frank, { type FrankHandle } from "../components/Frank";
-import { friendlyError, supabase } from "@/src/lib/supabase";
+import { friendlyError, invokeFunction, supabase } from "@/src/lib/supabase";
 import { colors } from "../../theme";
 
 // Reference size for positioning the tappable squares. Adjust the
@@ -176,6 +176,11 @@ function PairingModal({
       setError(rpcErr.message);
       return;
     }
+    void invokeFunction("notify-partner", { monster_id: monsterId }).then(
+      ({ error: notifyErr }) => {
+        if (notifyErr) console.warn("notify-partner falhou:", notifyErr);
+      }
+    );
     setDraft("");
     await load();
   };

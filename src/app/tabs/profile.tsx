@@ -28,6 +28,7 @@ import {
 import { useSession } from "../../contexts/SessionContext";
 import { colors } from "../../theme";
 import { invokeFunction, supabase } from "../../lib/supabase";
+import { unregisterPushToken } from "../../lib/pushNotifications";
 
 // NOTE: For real OS notifications on mobile, install expo-notifications:
 //   npx expo install expo-notifications
@@ -450,6 +451,7 @@ export default function Profile() {
   // -------------------------------------------------------------------------
 
   const handleLogOut = useCallback(async () => {
+    await unregisterPushToken();
     const { error } = await supabase.auth.signOut();
     if (error) {
       showAlert("Erro", error.message);

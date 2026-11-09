@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { MONSTER_COLUMNS, Monster, supabase } from "../lib/supabase";
+import { registerPushToken } from "../lib/pushNotifications";
 
 type SessionState = {
   session: Session | null;
@@ -62,6 +63,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
     refreshMonster();
   }, [userId, refreshMonster]);
+
+  useEffect(() => {
+    if (!userId) return;
+    registerPushToken().catch((err) => {
+      console.warn("Não foi possível registrar as notificações:", err);
+    });
+  }, [userId]);
 
   const loading = session === undefined || (userId !== null && loadedFor !== userId);
 
