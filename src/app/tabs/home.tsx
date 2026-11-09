@@ -17,24 +17,8 @@ import {
 import { useSession } from "../../contexts/SessionContext";
 import MonsterStats from "../../components/MonsterStats";
 import Frank, { type FrankHandle } from "../components/Frank";
-import { supabase } from "@/src/lib/supabase";
+import { friendlyError, supabase } from "@/src/lib/supabase";
 import { colors } from "../../theme";
-
-// --- pairing questions -----------------------------------------------------
-
-const QUESTIONS = [
-  "Qual sua memória favorita juntos?",
-  "Qual é a minha comida favorita?",
-  "Qual é a melhor parte do nosso tempo juntos?",
-  "Que animal você vê em mim?",
-  "Que personagem eu seria?",
-  "Qual é a minha estação do ano preferida?",
-];
-
-function pickRandomQuestion(exclude?: string): string {
-  const pool = exclude ? QUESTIONS.filter((q) => q !== exclude) : QUESTIONS;
-  return pool[Math.floor(Math.random() * pool.length)];
-}
 
 // Reference size for positioning the tappable squares. Adjust the
 // `right/left/bottom` values in `Home` so they line up with the
@@ -122,15 +106,12 @@ function PairingModal({
     setMembers((membersRes.data ?? []).map((m: any) => m.user_id as string));
 
     if (!pairingRes.data) {
-      const q = pickRandomQuestion();
-      const { error: insErr } = await supabase
-        .from("monster_pairing")
-        .upsert(
-          { monster_id: monsterId, question: q, answers: {} },
-          { onConflict: "monster_id", ignoreDuplicates: true }
-        );
-      if (insErr) {
-        setError(insErr.message);
+      const { error: ensureErr } = await supabase.rpc(
+        "ensure_pairing_question",
+        { monster_uuid: monsterId }
+      );
+      if (ensureErr) {
+        setError(friendlyError(ensureErr));
         setLoading(false);
         return;
       }
@@ -237,10 +218,9 @@ function PairingModal({
             !!currentUserId && liveIds.includes(currentUserId);
 
           if (liveAll && liveIMine) {
-            const q = pickRandomQuestion(pairing.question);
             const { error: rpcErr } = await supabase.rpc(
               "archive_and_reset_pairing",
-              { monster_uuid: monsterId, next_question: q }
+              { monster_uuid: monsterId }
             );
             if (rpcErr) {
               console.warn(

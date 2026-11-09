@@ -63,6 +63,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   monster_full: "Esse monstrinho já tem dois cuidadores.",
   already_has_monster: "Você já cuida de um monstrinho.",
   not_authenticated: "Sua sessão expirou. Entre novamente.",
+  not_a_member: "Você não cuida deste monstrinho.",
+  no_questions: "Nenhuma pergunta disponível no momento.",
+  no_pairing_question: "Nenhuma pergunta disponível no momento.",
+  not_all_answered: "Espere todos os cuidadores responderem.",
 };
 
 export function friendlyError(error: unknown) {
