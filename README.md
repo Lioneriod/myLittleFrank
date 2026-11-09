@@ -154,7 +154,24 @@ No `config.toml` as funções estão com `verify_jwt = false`: em vez do gateway
 
 - O app registra o token do Expo depois do login (`src/lib/pushNotifications.ts`) e remove o token ao sair da conta.
 - O registro só acontece em celular (não na web), fora do Expo Go no Android (desde o SDK 53 o Expo Go não recebe push remoto no Android) e quando o `app.json` tem um `extra.eas.projectId`.
-- Para ter o `projectId`, rode `npx eas-cli init` uma vez. Para testar push, use um development build (`npx expo run:android`, `npx expo run:ios` ou EAS Build).
+- No Android, o Expo entrega os pushes pelo Firebase Cloud Messaging (FCM), então o app precisa do `google-services.json` e o Expo precisa da chave do FCM.
+
+Para ativar no Android (uma vez só):
+
+1. **Projeto no Expo.** Crie uma conta em [expo.dev](https://expo.dev) e, na raiz do repositório, rode `npx eas-cli login` e depois `npx eas-cli init`. O comando grava `extra.eas.projectId` e `owner` no `app.json`; faça commit dessa mudança.
+2. **App no Firebase.** No [console do Firebase](https://console.firebase.google.com), crie um projeto e adicione um app Android com o pacote `com.mylittlefrank.app`. Baixe o `google-services.json`, coloque na raiz do repositório e adicione `"googleServicesFile": "./google-services.json"` dentro de `expo.android` no `app.json`. Esse arquivo pode ir para o Git: ele só identifica o app e já vai dentro do APK.
+3. **Chave do FCM no Expo.** No Firebase, em Configurações do projeto > Contas de serviço, clique em "Gerar nova chave privada". Envie o JSON baixado em expo.dev > seu projeto > Credentials > Android > `com.mylittlefrank.app` > FCM V1 service account key. Essa chave é secreta: nunca faça commit dela.
+4. **Back-end.** A tabela `push_tokens`, as funções `register_push_token`/`unregister_push_token` e a Edge Function `notify-partner` precisam estar no projeto Supabase:
+
+   ```bash
+   npx supabase link --project-ref SEU_PROJECT_REF
+   npx supabase db push --remote
+   npx supabase functions deploy --use-api
+   ```
+
+5. **Novo APK.** Gere o APK de novo (veja [Como gerar o APK](#como-gerar-o-apk-para-instalar-no-celular-android)) e instale nos celulares.
+
+Para testar, entre com duas contas que cuidam do mesmo monstrinho, uma em cada celular, e responda a pergunta do corvo em um deles: o outro recebe "Seu parceiro respondeu!". No iOS, o push precisa de uma conta paga da Apple e de um build pelo EAS.
 
 ### Variáveis de ambiente e segredos
 

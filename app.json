@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "My Little Frank",
-    "slug": "helia",
+    "slug": "my-little-frank",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
