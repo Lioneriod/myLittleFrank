@@ -35,13 +35,10 @@ export type Monster = {
   id: string;
   name: string;
   invite_code: string;
-  hunger: number;
-  thirst: number;
-  affection: number;
   created_at: string;
 };
 
-export const MONSTER_COLUMNS = "id, name, invite_code, hunger, thirst, affection, created_at";
+export const MONSTER_COLUMNS = "id, name, invite_code, created_at";
 
 export function monsterAgeInDays(monster: Monster) {
   const ms = Date.now() - new Date(monster.created_at).getTime();

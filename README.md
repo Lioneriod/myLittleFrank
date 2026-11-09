@@ -18,9 +18,8 @@ Este é um projeto [Expo](https://expo.dev). Utilizamos o projeto [Helia](https:
 - Jest
 - React Native Reanimated
 #### Back-end
-- Supabase (Auth, PostgreSQL com RLS, Edge Functions em Deno/TypeScript, Vault)
+- Supabase (Auth, PostgreSQL com RLS, Edge Functions em Deno/TypeScript)
 - PostgreSQL
-- pg_cron e pg_net (tarefas agendadas)
 - Expo Push API (notificações)
 ### Como rodar nosso projeto localmente
 1. Instale as dependências
@@ -48,7 +47,6 @@ supabase/
 └── functions/
     ├── _shared/         código comum (CORS, erros em JSON, cliente service_role, checagem do JWT)
     ├── delete-account/
-    ├── decay-needs/
     └── notify-partner/
 ```
 
@@ -64,8 +62,6 @@ App Expo (supabase-js + chave publicável)
  └─► Edge Functions ........... delete-account, notify-partner
         ├─► banco e Auth admin com a chave service_role (só no servidor)
         └─► API de push do Expo
-
-pg_cron (a cada hora) ──pg_net──► Edge Function decay-needs ──► decay_monster_needs()
 ```
 
 - O app só tem a chave publicável (ou a `anon` legada). A chave `service_role` existe apenas dentro das Edge Functions.
@@ -77,7 +73,7 @@ pg_cron (a cada hora) ──pg_net──► Edge Function decay-needs ──► 
 
 | Tabela | Para que serve | O que o app (`authenticated`) pode fazer |
 |---|---|---|
-| `monsters` | O monstrinho: `name`, `invite_code`, `hunger`, `thirst` e `affection` (0 = precisa de cuidado, 100 = satisfeito), `frank_parts` (JSON com as partes do Frank), `frank_parts_updated_at`, `created_by` e `created_at`. | Ler o monstrinho de que cuida. Alterar só `name`, `hunger`, `thirst`, `affection`, `frank_parts` e `frank_parts_updated_at`. |
+| `monsters` | O monstrinho: `name`, `invite_code`, `frank_parts` (JSON com as partes do Frank), `frank_parts_updated_at`, `created_by` e `created_at`. | Ler o monstrinho de que cuida. Alterar só `name`, `frank_parts` e `frank_parts_updated_at`. |
 | `monster_members` | Quem cuida de cada monstrinho (no máximo 2). Cada usuário cuida de um só. | Ler os cuidadores do próprio monstrinho. |
 | `monster_pairing` | A pergunta atual de cada monstrinho e as respostas (`answers`, no formato `{ "id do usuário": "resposta" }`). | Ler. A escrita acontece só pelas funções SQL. |
 | `monster_pairing_history` | O diário: perguntas que todos já responderam, com as respostas e a data (`answered_at`). | Ler o diário do próprio monstrinho. |
@@ -103,7 +99,6 @@ Para adicionar perguntas, crie uma migração com `insert into public.pairing_qu
 | `register_push_token(push_token, device_platform)` | Salva o token de push do aparelho para o usuário logado. Se o aparelho trocar de conta, o token passa para a conta nova. | `authenticated` |
 | `unregister_push_token(push_token)` | Remove o token do usuário logado (usado ao sair da conta). | `authenticated` |
 | `is_monster_member(target_monster)` | Diz se o usuário logado cuida do monstrinho. Usada pelas políticas de RLS. | `authenticated` |
-| `decay_monster_needs(amount)` | Diminui `hunger`, `thirst` e `affection` de todos os monstrinhos, sem passar de 0. | só `service_role` |
 | `pick_pairing_question(monster_uuid, exclude_question)` | Escolhe a próxima pergunta. | interna |
 | `generate_invite_code()` | Gera um código de 6 caracteres sem 0/O e 1/I. | interna |
 
@@ -122,29 +117,12 @@ No `config.toml` as funções estão com `verify_jwt = false`: em vez do gateway
 - Resposta: `{ "ok": true, "deleted_monster": true | false }`.
 - Usada em: Perfil > Apagar conta.
 
-**`decay-needs`**
-- Autenticação: cabeçalho `x-cron-secret`, que precisa ser igual ao segredo `CRON_SECRET` (comparação em tempo constante). Não usa JWT, porque quem chama é o `pg_cron`.
-- Corpo: nenhum.
-- O que faz: chama `decay_monster_needs` com a chave `service_role` e diminui as necessidades em 5 por execução (constante `DECAY_PER_RUN`).
-- Resposta: `{ "ok": true, "decay": 5, "monsters_updated": 3 }`.
-
 **`notify-partner`**
 - Autenticação: JWT do usuário.
 - Corpo: `{ "monster_id": "uuid do monstrinho" }`.
 - O que faz: confere se o usuário cuida do monstrinho e se já respondeu a pergunta atual, busca os tokens do outro cuidador e envia "Seu parceiro respondeu!" pela API de push do Expo. Tokens que o Expo diz não existirem mais (`DeviceNotRegistered`) são apagados.
 - Resposta: `{ "ok": true, "sent": 1, "removed_tokens": 0 }`.
 - Usada em: logo depois de `answer_pairing_question`, na tela inicial.
-
-### Necessidades caindo com o tempo
-
-A migração `schedule_decay_needs` liga as extensões `pg_cron` e `pg_net` e cria o job `decay-needs-hourly`, que roda no minuto 0 de cada hora (`0 * * * *`). O job faz um `POST` para a URL guardada no Vault como `decay_needs_url`, com o cabeçalho `x-cron-secret` vindo do segredo `cron_secret` do Vault. Nenhum dos dois fica no repositório.
-
-Para acompanhar as execuções, rode no SQL Editor:
-
-```sql
-select * from cron.job_run_details order by start_time desc limit 10;
-select * from net._http_response order by created desc limit 10;
-```
 
 ### Notificações push
 
@@ -168,10 +146,7 @@ Nunca coloque a chave `service_role` (ou a "secret key") no app.
 | Segredo | Descrição |
 |---|---|
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Criados automaticamente pelo Supabase. |
-| `CRON_SECRET` | Obrigatório para `decay-needs`. Deve ser igual ao segredo `cron_secret` do Vault. |
 | `EXPO_ACCESS_TOKEN` | Opcional. Só é necessário se o "Enhanced push security" estiver ligado na conta do Expo. |
-
-**Vault** (dentro do banco): `decay_needs_url` e `cron_secret`.
 
 ### Como configurar um novo projeto Supabase a partir do repositório
 
@@ -199,23 +174,7 @@ Pré-requisitos: Node.js, `npm install` já rodado e Docker Desktop aberto (o CL
    npx supabase functions deploy
    ```
 
-5. Gere um segredo aleatório e cadastre-o nas Edge Functions:
-
-   ```bash
-   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-   npx supabase secrets set CRON_SECRET=O_VALOR_GERADO
-   ```
-
-6. No SQL Editor do dashboard, guarde a URL da função e o mesmo segredo no Vault:
-
-   ```sql
-   select vault.create_secret('https://SEU_PROJECT_REF.supabase.co/functions/v1/decay-needs', 'decay_needs_url');
-   select vault.create_secret('O_VALOR_GERADO', 'cron_secret');
-   ```
-
-   Para trocar um valor depois: `select vault.update_secret((select id from vault.secrets where name = 'cron_secret'), 'NOVO_VALOR');` e rode `secrets set` de novo com o mesmo valor.
-
-7. Configure o `.env` do app (veja [Variáveis de ambiente e segredos](#variáveis-de-ambiente-e-segredos)) e rode `npx expo start`.
+5. Configure o `.env` do app (veja [Variáveis de ambiente e segredos](#variáveis-de-ambiente-e-segredos)) e rode `npx expo start`.
 
 As configurações de Auth (confirmação de e-mail, provedores, URLs de redirecionamento) continuam no dashboard. A seção `[auth]` do `config.toml` vale só para o ambiente local.
 
