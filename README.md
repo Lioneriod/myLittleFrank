@@ -36,6 +36,32 @@ Este é um projeto [Expo](https://expo.dev). Utilizamos o projeto [Helia](https:
    npx expo start
    ```
 
+### Como gerar o APK para instalar no celular Android
+O APK é compilado a partir do código. As pastas `android/` e `ios/` são geradas pelo `expo prebuild` e não vão para o Git.
+
+Pré-requisitos: Node.js, JDK 17 ou mais novo e o Android SDK (o jeito mais fácil é instalar o Android Studio). A variável `ANDROID_HOME` precisa apontar para o SDK.
+
+1. Crie o `.env` como no passo 2 acima. A URL e a chave do Supabase ficam embutidas no APK: sem elas, o app fecha assim que abre.
+2. Gere o projeto Android nativo:
+
+   ```bash
+   npx expo prebuild --platform android
+   ```
+
+3. Compile o APK de release (no Windows, use `gradlew.bat` no lugar de `./gradlew`):
+
+   ```bash
+   cd android
+   ./gradlew assembleRelease
+   ```
+
+   Para compilar mais rápido, gere só para celulares de 64 bits: `./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a`.
+4. O arquivo fica em `android/app/build/outputs/apk/release/app-release.apk`. Envie para o celular, abra e permita a instalação de apps de fontes desconhecidas.
+
+O APK é assinado com a chave de debug, o que basta para instalar nos próprios celulares. Um APK gerado em outro computador tem outra assinatura: desinstale a versão anterior antes de instalar a nova. Para publicar na Play Store é preciso uma chave de release própria.
+
+As notificações push ficam desligadas nesse APK enquanto o `app.json` não tiver um `extra.eas.projectId` e o Firebase Cloud Messaging não estiver configurado (veja [Notificações push](#notificações-push)).
+
 ## Back-end
 
 Todo o back-end roda no [Supabase](https://supabase.com) e está versionado neste repositório, na pasta `supabase/`. As migrações são a fonte da verdade do banco: nada deve ser alterado direto no dashboard sem virar uma migração.

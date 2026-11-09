@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "helia",
+    "name": "My Little Frank",
     "slug": "helia",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -12,6 +12,8 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.mylittlefrank.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
