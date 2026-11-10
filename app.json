@@ -13,6 +13,7 @@
     },
     "android": {
       "package": "com.mylittlefrank.app",
+      "googleServicesFile": "./google-services.json",
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
