@@ -1,7 +1,7 @@
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import { supabase } from "./supabase";
+import * as api from "./api";
 
 let registeredToken: string | null = null;
 
@@ -45,11 +45,7 @@ export async function registerPushToken(): Promise<string | null> {
   if (status !== "granted") return null;
 
   const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId: easProjectId() });
-  const { error } = await supabase.rpc("register_push_token", {
-    push_token: token,
-    device_platform: Platform.OS,
-  });
-  if (error) throw error;
+  await api.registerPushToken(token, Platform.OS);
 
   registeredToken = token;
   return token;
@@ -59,6 +55,9 @@ export async function unregisterPushToken() {
   if (!registeredToken) return;
   const token = registeredToken;
   registeredToken = null;
-  const { error } = await supabase.rpc("unregister_push_token", { push_token: token });
-  if (error) console.warn("unregister_push_token falhou:", error.message);
+  try {
+    await api.unregisterPushToken(token);
+  } catch (err) {
+    console.warn("Não foi possível remover o token de push:", api.friendlyError(err));
+  }
 }

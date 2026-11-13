@@ -12,7 +12,7 @@ import {
 import { Redirect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSession } from "../contexts/SessionContext";
-import { friendlyError, supabase } from "../lib/supabase";
+import { ApiError, friendlyError, signIn, signUp } from "../lib/api";
 import { ChalkButton, ChalkCard, ChalkInput, ChalkLine } from "../components/Chalk";
 import { colors } from "../theme";
 
@@ -58,36 +58,10 @@ export default function Login() {
     setBusy(true);
     try {
       if (mode === "signIn") {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password,
-        });
-        if (error) setError(friendlyError(error));
+        await signIn(cleanEmail, password);
       } else {
-        const { data, error } = await supabase.auth.signUp({ email: cleanEmail, password });
-
-        if (error) {
-          if (
-            error.code === "user_already_exists" ||
-            /already registered/i.test(error.message)
-          ) {
-            showDialog({
-              title: "Conta já existe",
-              message: "Tente entrar com a sua conta.",
-            });
-          } else {
-            setError(friendlyError(error));
-          }
-        } else if (
-          data.user &&
-          Array.isArray(data.user.identities) &&
-          data.user.identities.length === 0
-        ) {
-          showDialog({
-            title: "Conta já existe",
-            message: "Tente entrar com a sua conta.",
-          });
-        } else if (!data.session) {
+        const { confirmationRequired } = await signUp(cleanEmail, password);
+        if (confirmationRequired) {
           showDialog({
             title: "Email de confirmação enviado",
             message: "Confirme pelo link enviado para o seu e-mail.",
@@ -95,7 +69,14 @@ export default function Login() {
         }
       }
     } catch (err) {
-      setError(friendlyError(err));
+      if (err instanceof ApiError && err.code === "user_already_exists") {
+        showDialog({
+          title: "Conta já existe",
+          message: "Tente entrar com a sua conta.",
+        });
+      } else {
+        setError(friendlyError(err));
+      }
     } finally {
       setBusy(false);
     }

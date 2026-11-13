@@ -16,7 +16,14 @@ import { useSession } from "../../contexts/SessionContext";
 import MonsterStats from "../../components/MonsterStats";
 import Frank, { type FrankHandle } from "../components/Frank";
 import Scene, { type SceneArt, type SceneRect } from "../../components/Scene";
-import { friendlyError, invokeFunction, supabase } from "@/src/lib/supabase";
+import {
+  ApiError,
+  advancePairing,
+  answerPairing,
+  friendlyError,
+  getHistory,
+  getPairing,
+} from "@/src/lib/api";
 import { colors } from "../../theme";
 
 const HOME_ART: SceneArt = {
@@ -63,82 +70,24 @@ function PairingModal({
   visible: boolean;
   onClose: () => void;
 }) {
+  const { session } = useSession();
+  const currentUserId = session?.user.id ?? null;
   const [pairing, setPairing] = useState<PairingRow | null>(null);
   const [members, setMembers] = useState<string[]>([]);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      setError("Sessão expirada.");
-      setLoading(false);
-      return;
+    try {
+      const live = await getPairing(monsterId);
+      setMembers(live.members);
+      setPairing({ question: live.question, answers: live.answers });
+      setError(null);
+    } catch (err) {
+      setError(friendlyError(err));
     }
-    setCurrentUserId(user.id);
-
-    const [membersRes, pairingRes] = await Promise.all([
-      supabase
-        .from("monster_members")
-        .select("user_id")
-        .eq("monster_id", monsterId),
-      supabase
-        .from("monster_pairing")
-        .select("question, answers")
-        .eq("monster_id", monsterId)
-        .maybeSingle(),
-    ]);
-
-    if (membersRes.error) {
-      setError(membersRes.error.message);
-      setLoading(false);
-      return;
-    }
-    if (pairingRes.error) {
-      setError(pairingRes.error.message);
-      setLoading(false);
-      return;
-    }
-
-    setMembers((membersRes.data ?? []).map((m: any) => m.user_id as string));
-
-    if (!pairingRes.data) {
-      const { error: ensureErr } = await supabase.rpc(
-        "ensure_pairing_question",
-        { monster_uuid: monsterId }
-      );
-      if (ensureErr) {
-        setError(friendlyError(ensureErr));
-        setLoading(false);
-        return;
-      }
-      const { data: retry, error: retryErr } = await supabase
-        .from("monster_pairing")
-        .select("question, answers")
-        .eq("monster_id", monsterId)
-        .maybeSingle();
-      if (retryErr || !retry) {
-        setError(retryErr?.message ?? "Falha ao criar pergunta.");
-        setLoading(false);
-        return;
-      }
-      setPairing({
-        question: retry.question,
-        answers: (retry.answers as Record<string, string>) ?? {},
-      });
-    } else {
-      setPairing({
-        question: pairingRes.data.question,
-        answers: (pairingRes.data.answers as Record<string, string>) ?? {},
-      });
-    }
-
-    setError(null);
     setLoading(false);
   }, [monsterId]);
 
@@ -169,20 +118,14 @@ function PairingModal({
     if (!trimmed) return;
     setSubmitting(true);
     setError(null);
-    const { error: rpcErr } = await supabase.rpc("answer_pairing_question", {
-      monster_uuid: monsterId,
-      answer_text: trimmed,
-    });
-    setSubmitting(false);
-    if (rpcErr) {
-      setError(rpcErr.message);
+    try {
+      await answerPairing(monsterId, trimmed);
+    } catch (err) {
+      setSubmitting(false);
+      setError(friendlyError(err));
       return;
     }
-    void invokeFunction("notify-partner", { monster_id: monsterId }).then(
-      ({ error: notifyErr }) => {
-        if (notifyErr) console.warn("notify-partner falhou:", notifyErr);
-      }
-    );
+    setSubmitting(false);
     setDraft("");
     await load();
   };
@@ -203,37 +146,11 @@ function PairingModal({
     if (pairing && allAnswered && myAnswer) {
       setSubmitting(true);
       try {
-        const { data: live } = await supabase
-          .from("monster_pairing")
-          .select("question, answers")
-          .eq("monster_id", monsterId)
-          .maybeSingle();
-
-        if (live && live.question === pairing.question) {
-          const liveAnswers =
-            (live.answers as Record<string, string>) ?? {};
-          const liveIds = Object.keys(liveAnswers);
-          const liveAll =
-            members.length === 0 ||
-            members.every((m) => liveIds.includes(m));
-          const liveIMine =
-            !!currentUserId && liveIds.includes(currentUserId);
-
-          if (liveAll && liveIMine) {
-            const { error: rpcErr } = await supabase.rpc(
-              "archive_and_reset_pairing",
-              { monster_uuid: monsterId }
-            );
-            if (rpcErr) {
-              console.warn(
-                "archive_and_reset_pairing failed:",
-                rpcErr.message
-              );
-            }
-          }
-        }
+        await advancePairing(monsterId, pairing.question);
       } catch (e) {
-        console.warn("auto-advance failed:", e);
+        if (!(e instanceof ApiError) || e.status !== 409) {
+          console.warn("auto-advance failed:", e);
+        }
       } finally {
         setSubmitting(false);
       }
@@ -245,8 +162,6 @@ function PairingModal({
     pairing,
     allAnswered,
     myAnswer,
-    members,
-    currentUserId,
     monsterId,
     onClose,
   ]);
@@ -378,8 +293,9 @@ function DiaryModal({
   visible: boolean;
   onClose: () => void;
 }) {
+  const { session } = useSession();
+  const currentUserId = session?.user.id ?? null;
   const [history, setHistory] = useState<HistoryRow[]>([]);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -390,34 +306,14 @@ function DiaryModal({
     setError(null);
 
     (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (cancelled) return;
-      setCurrentUserId(user?.id ?? null);
-
-      const { data, error: histErr } = await supabase
-        .from("monster_pairing_history")
-        .select("id, question, answers, answered_at")
-        .eq("monster_id", monsterId)
-        .order("answered_at", { ascending: false });
-
-      if (cancelled) return;
-
-      if (histErr) {
-        setError(histErr.message);
-        setLoading(false);
-        return;
+      try {
+        const entries = await getHistory(monsterId);
+        if (cancelled) return;
+        setHistory(entries);
+      } catch (err) {
+        if (cancelled) return;
+        setError(friendlyError(err));
       }
-
-      setHistory(
-        (data ?? []).map((h: any) => ({
-          id: h.id,
-          question: h.question,
-          answers: (h.answers as Record<string, string>) ?? {},
-          answered_at: h.answered_at,
-        }))
-      );
       setLoading(false);
     })();
 
@@ -506,36 +402,6 @@ export default function Home() {
   const frank = useRef<FrankHandle>(null);
   const [pairingOpen, setPairingOpen] = useState(false);
   const [diaryOpen, setDiaryOpen] = useState(false);
-
-  useEffect(() => {
-    if (!monster) return;
-    let cancelled = false;
-
-    (async () => {
-      const {
-        data: { user },
-        error: userErr,
-      } = await supabase.auth.getUser();
-      const { data: member, error: memberErr } = await supabase
-        .from("monster_members")
-        .select("monster_id, user_id")
-        .eq("monster_id", monster.id)
-        .maybeSingle();
-
-      if (cancelled) return;
-      console.log({
-        user: user?.id,
-        userErr,
-        member,
-        memberErr,
-        monsterId: monster.id,
-      });
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [monster?.id]);
 
   return (
     <>

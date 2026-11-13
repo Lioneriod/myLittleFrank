@@ -12,7 +12,13 @@ import {
 import { Redirect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSession } from "../contexts/SessionContext";
-import { Monster, friendlyError, supabase } from "../lib/supabase";
+import {
+  Monster,
+  createMonster as createMonsterRequest,
+  friendlyError,
+  joinMonster as joinMonsterRequest,
+  signOut,
+} from "../lib/api";
 import { ChalkButton, ChalkCard, ChalkInput, ChalkLine } from "../components/Chalk";
 import { colors } from "../theme";
 
@@ -34,13 +40,12 @@ export default function Pair() {
   const createMonster = async () => {
     setError(null);
     setBusy("create");
-    const { data, error } = await supabase.rpc("create_monster");
-    setBusy(null);
-    if (error) {
-      setError(friendlyError(error));
-      return;
+    try {
+      setCreated(await createMonsterRequest());
+    } catch (err) {
+      setError(friendlyError(err));
     }
-    setCreated(data as Monster);
+    setBusy(null);
   };
 
   const joinMonster = async () => {
@@ -51,10 +56,11 @@ export default function Pair() {
     }
     setError(null);
     setBusy("join");
-    const { error } = await supabase.rpc("join_monster", { code: cleanCode });
-    if (error) {
+    try {
+      await joinMonsterRequest(cleanCode);
+    } catch (err) {
       setBusy(null);
-      setError(friendlyError(error));
+      setError(friendlyError(err));
       return;
     }
     if (!(await refreshMonster())) {
@@ -191,7 +197,7 @@ export default function Pair() {
         {!created && (
           <Pressable
             accessibilityRole="button"
-            onPress={() => supabase.auth.signOut()}
+            onPress={() => signOut().catch((err) => setError(friendlyError(err)))}
             style={styles.signOut}
           >
             <Text style={styles.signOutText}>Sair desta conta</Text>

@@ -1,6 +1,6 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { Monster, monsterAgeInDays } from "../lib/supabase";
+import { Monster, monsterAgeInDays } from "../lib/api";
 import { colors } from "../theme";
 
 export default function MonsterStats({ monster }: { monster: Monster }) {

@@ -27,7 +27,13 @@ import {
 } from "phosphor-react-native";
 import { useSession } from "../../contexts/SessionContext";
 import { colors } from "../../theme";
-import { invokeFunction, supabase } from "../../lib/supabase";
+import {
+  deleteAccount,
+  deleteMonster,
+  friendlyError,
+  signOut,
+  updateMonster,
+} from "../../lib/api";
 import { unregisterPushToken } from "../../lib/pushNotifications";
 
 const SETTINGS_KEY = "@my_little_frank/settings";
@@ -310,16 +316,14 @@ export default function Profile() {
     if (trimmed === monster.name) return;
 
     setSavingName(true);
-    const { error } = await supabase
-      .from("monsters")
-      .update({ name: trimmed })
-      .eq("id", monster.id);
-    setSavingName(false);
-
-    if (error) {
-      showAlert("Erro", error.message);
+    try {
+      await updateMonster(monster.id, { name: trimmed });
+    } catch (err) {
+      setSavingName(false);
+      showAlert("Erro", friendlyError(err));
       return;
     }
+    setSavingName(false);
     await refreshMonster();
   }, [monster, nameDraft, refreshMonster]);
 
@@ -336,41 +340,11 @@ export default function Profile() {
 
     setBusy("monster");
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        showAlert("Erro", "Sessão expirada. Faça login de novo.");
-        return;
-      }
-
-      const monsterId = monster.id;
-
-      const { error: rpcErr } = await supabase.rpc("delete_monster", {
-        monster_uuid: monsterId,
-      });
-      if (rpcErr) {
-        showAlert("Erro", rpcErr.message);
-        return;
-      }
-
-      const { data: stillExists, error: checkErr } = await supabase.rpc(
-        "monster_exists",
-        { m: monsterId }
-      );
-      if (checkErr) {
-        showAlert("Erro", checkErr.message);
-        return;
-      }
-      if (stillExists) {
-        showAlert("Erro", "Este Frank ainda está no banco de dados.");
-        return;
-      }
-
+      await deleteMonster(monster.id);
       await refreshMonster();
       router.replace("/pair");
-    } catch (err: any) {
-      showAlert("Erro", err?.message ?? "Falha ao apagar Frank.");
+    } catch (err) {
+      showAlert("Erro", friendlyError(err));
     } finally {
       setBusy(null);
     }
@@ -388,15 +362,9 @@ export default function Profile() {
 
     setBusy("account");
     try {
-      const { error } = await invokeFunction("delete-account");
-      if (error) {
-        showAlert("Erro", error);
-        return;
-      }
-
-      await supabase.auth.signOut({ scope: "local" });
-    } catch (err: any) {
-      showAlert("Erro", err?.message ?? "Não foi possível apagar a conta.");
+      await deleteAccount();
+    } catch (err) {
+      showAlert("Erro", friendlyError(err));
     } finally {
       setBusy(null);
     }
@@ -404,9 +372,10 @@ export default function Profile() {
 
   const handleLogOut = useCallback(async () => {
     await unregisterPushToken();
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      showAlert("Erro", error.message);
+    try {
+      await signOut();
+    } catch (err) {
+      showAlert("Erro", friendlyError(err));
     }
   }, []);
 

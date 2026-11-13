@@ -1,6 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import type { Session } from "@supabase/supabase-js";
-import { MONSTER_COLUMNS, Monster, supabase } from "../lib/supabase";
+import { Monster, Session, getMyMonster, onSessionChange } from "../lib/api";
 import { registerPushToken } from "../lib/pushNotifications";
 
 type SessionState = {
@@ -19,12 +18,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const { data } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
-    });
-    return () => data.subscription.unsubscribe();
-  }, []);
+  useEffect(() => onSessionChange(setSession), []);
 
   const userId = session?.user.id ?? null;
   const currentUserId = useRef(userId);
@@ -32,19 +26,22 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const refreshMonster = useCallback(async () => {
     if (!userId) return false;
-    const { data, error } = await supabase
-      .from("monsters")
-      .select(MONSTER_COLUMNS)
-      .maybeSingle<Monster>();
+    let loaded: Monster | null = null;
+    let failed = false;
+    try {
+      loaded = await getMyMonster();
+    } catch {
+      failed = true;
+    }
     if (currentUserId.current !== userId) return false;
-    if (error) {
+    if (failed) {
       setError("Não foi possível carregar seu monstrinho.");
     } else {
       setError(null);
-      setMonster(data);
+      setMonster(loaded);
     }
     setLoadedFor(userId);
-    return !error;
+    return !failed;
   }, [userId]);
 
   useEffect(() => {

@@ -11,7 +11,7 @@ import {
 import { Redirect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSession } from "../contexts/SessionContext";
-import { friendlyError, supabase } from "../lib/supabase";
+import { friendlyError, signIn, signUp } from "../lib/api";
 import { ChalkButton, ChalkCard, ChalkInput, ChalkLine } from "../components/Chalk";
 import { colors } from "../theme";
 
@@ -47,16 +47,10 @@ export default function Login() {
     setBusy(true);
     try {
       if (mode === "signIn") {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password,
-        });
-        if (error) setError(friendlyError(error));
+        await signIn(cleanEmail, password);
       } else {
-        const { data, error } = await supabase.auth.signUp({ email: cleanEmail, password });
-        if (error) {
-          setError(friendlyError(error));
-        } else if (!data.session) {
+        const { confirmationRequired } = await signUp(cleanEmail, password);
+        if (confirmationRequired) {
           setMode("signIn");
           setNotice("Conta criada! Confirme pelo link que enviamos para o seu e-mail e depois entre.");
         }

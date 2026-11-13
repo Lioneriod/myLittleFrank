@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { supabase } from "../../lib/supabase";
+import { getMonster, updateMonster } from "../../lib/api";
 import {
   DEFAULT_FRANK_PARTS,
   FrankPartKey,
@@ -91,29 +91,14 @@ async function push(monsterId: string) {
   const snap = getSnapshot(monsterId);
   if (!snap.dirty) return;
 
-  const { error, data, status, statusText } = await supabase
-    .from("monsters")
-    .update({
+  try {
+    await updateMonster(monsterId, {
       frank_parts: snap.parts,
       frank_parts_updated_at: new Date(snap.updatedAt).toISOString(),
-    })
-    .eq("id", monsterId)
-    .select("id, frank_parts_updated_at");
-
-  console.log("[frankStore.push]", {
-    monsterId,
-    status,
-    statusText,
-    errorCode: error?.code,
-    errorMessage: error?.message,
-    errorDetails: error?.details,
-    errorHint: error?.hint,
-    data,
-  });
-
-  if (error) {
+    });
+  } catch (err) {
+    console.warn("[frankStore.push]", monsterId, err);
     schedulePush(monsterId, RETRY_MS);
-    return;
   }
 }
 
@@ -159,13 +144,9 @@ async function doHydrate(monsterId: string) {
 
   let remoteApplied = false;
   try {
-    const { data, error } = await supabase
-      .from("monsters")
-      .select("frank_parts, frank_parts_updated_at")
-      .eq("id", monsterId)
-      .maybeSingle();
+    const data = await getMonster(monsterId);
 
-    if (!error && data?.frank_parts && Object.keys(data.frank_parts).length > 0) {
+    if (data.frank_parts && Object.keys(data.frank_parts).length > 0) {
       const remoteUpdatedAt = data.frank_parts_updated_at
         ? Date.parse(data.frank_parts_updated_at)
         : 0;
