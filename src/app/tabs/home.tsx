@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  ImageBackground,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -12,36 +11,32 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  useWindowDimensions,
 } from "react-native";
 import { useSession } from "../../contexts/SessionContext";
 import MonsterStats from "../../components/MonsterStats";
 import Frank, { type FrankHandle } from "../components/Frank";
-import { supabase } from "@/src/lib/supabase";
+import Scene, { type SceneArt, type SceneRect } from "../../components/Scene";
+import {
+  ApiError,
+  advancePairing,
+  answerPairing,
+  friendlyError,
+  getHistory,
+  getPairing,
+} from "@/src/lib/api";
 import { colors } from "../../theme";
 
-// --- pairing questions -----------------------------------------------------
+const HOME_ART: SceneArt = {
+  source: require("../assets/bgs/telaPrincipal.jpg"),
+  width: 1200,
+  height: 3171,
+  anchorY: 3000,
+  anchorTo: 1,
+};
 
-const QUESTIONS = [
-  "Qual sua memória favorita juntos?",
-  "Qual é a minha comida favorita?",
-  "Qual é a melhor parte do nosso tempo juntos?",
-  "Que animal você vê em mim?",
-  "Que personagem eu seria?",
-  "Qual é a minha estação do ano preferida?",
-];
-
-function pickRandomQuestion(exclude?: string): string {
-  const pool = exclude ? QUESTIONS.filter((q) => q !== exclude) : QUESTIONS;
-  return pool[Math.floor(Math.random() * pool.length)];
-}
-
-// Reference size for positioning the tappable squares. Adjust the
-// `right/left/bottom` values in `Home` so they line up with the
-// interactive visual elements on `telaPrincipal.jpg`.
-const BASE_WIDTH = 800;
-const BASE_HEIGHT = 1200;
-const SQUARE_BASE = 256;
+const DIARY_SPOT: SceneRect = { x: 20, y: 1809, w: 390, h: 270 };
+const PAIRING_SPOT: SceneRect = { x: 760, y: 2024, w: 370, h: 330 };
+const FRANK_FEET = { x: 600, y: 2869 };
 
 type PairingRow = { question: string; answers: Record<string, string> };
 
@@ -66,8 +61,6 @@ function formatDate(ts: string): string {
   }
 }
 
-// --- pair question modal ---------------------------------------------------
-
 function PairingModal({
   monsterId,
   visible,
@@ -77,85 +70,24 @@ function PairingModal({
   visible: boolean;
   onClose: () => void;
 }) {
+  const { session } = useSession();
+  const currentUserId = session?.user.id ?? null;
   const [pairing, setPairing] = useState<PairingRow | null>(null);
   const [members, setMembers] = useState<string[]>([]);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      setError("Sessão expirada.");
-      setLoading(false);
-      return;
+    try {
+      const live = await getPairing(monsterId);
+      setMembers(live.members);
+      setPairing({ question: live.question, answers: live.answers });
+      setError(null);
+    } catch (err) {
+      setError(friendlyError(err));
     }
-    setCurrentUserId(user.id);
-
-    const [membersRes, pairingRes] = await Promise.all([
-      supabase
-        .from("monster_members")
-        .select("user_id")
-        .eq("monster_id", monsterId),
-      supabase
-        .from("monster_pairing")
-        .select("question, answers")
-        .eq("monster_id", monsterId)
-        .maybeSingle(),
-    ]);
-
-    if (membersRes.error) {
-      setError(membersRes.error.message);
-      setLoading(false);
-      return;
-    }
-    if (pairingRes.error) {
-      setError(pairingRes.error.message);
-      setLoading(false);
-      return;
-    }
-
-    setMembers((membersRes.data ?? []).map((m: any) => m.user_id as string));
-
-    if (!pairingRes.data) {
-      const q = pickRandomQuestion();
-      const { error: insErr } = await supabase
-        .from("monster_pairing")
-        .upsert(
-          { monster_id: monsterId, question: q, answers: {} },
-          { onConflict: "monster_id", ignoreDuplicates: true }
-        );
-      if (insErr) {
-        setError(insErr.message);
-        setLoading(false);
-        return;
-      }
-      const { data: retry, error: retryErr } = await supabase
-        .from("monster_pairing")
-        .select("question, answers")
-        .eq("monster_id", monsterId)
-        .maybeSingle();
-      if (retryErr || !retry) {
-        setError(retryErr?.message ?? "Falha ao criar pergunta.");
-        setLoading(false);
-        return;
-      }
-      setPairing({
-        question: retry.question,
-        answers: (retry.answers as Record<string, string>) ?? {},
-      });
-    } else {
-      setPairing({
-        question: pairingRes.data.question,
-        answers: (pairingRes.data.answers as Record<string, string>) ?? {},
-      });
-    }
-
-    setError(null);
     setLoading(false);
   }, [monsterId]);
 
@@ -186,15 +118,14 @@ function PairingModal({
     if (!trimmed) return;
     setSubmitting(true);
     setError(null);
-    const { error: rpcErr } = await supabase.rpc("answer_pairing_question", {
-      monster_uuid: monsterId,
-      answer_text: trimmed,
-    });
-    setSubmitting(false);
-    if (rpcErr) {
-      setError(rpcErr.message);
+    try {
+      await answerPairing(monsterId, trimmed);
+    } catch (err) {
+      setSubmitting(false);
+      setError(friendlyError(err));
       return;
     }
+    setSubmitting(false);
     setDraft("");
     await load();
   };
@@ -209,49 +140,17 @@ function PairingModal({
     (m) => !answeredIds.includes(m)
   ).length;
 
-  // Every close path (X, overlay tap, Android back) goes through here.
-  // If the user has seen both answers, we archive + reset the question
-  // before closing — replacing the old "Próxima pergunta" button.
   const handleClose = useCallback(async () => {
     if (submitting) return;
 
     if (pairing && allAnswered && myAnswer) {
       setSubmitting(true);
       try {
-        // Re-fetch live state so we don't double-advance if the other
-        // caregiver already closed first (or beat us to the archive).
-        const { data: live } = await supabase
-          .from("monster_pairing")
-          .select("question, answers")
-          .eq("monster_id", monsterId)
-          .maybeSingle();
-
-        if (live && live.question === pairing.question) {
-          const liveAnswers =
-            (live.answers as Record<string, string>) ?? {};
-          const liveIds = Object.keys(liveAnswers);
-          const liveAll =
-            members.length === 0 ||
-            members.every((m) => liveIds.includes(m));
-          const liveIMine =
-            !!currentUserId && liveIds.includes(currentUserId);
-
-          if (liveAll && liveIMine) {
-            const q = pickRandomQuestion(pairing.question);
-            const { error: rpcErr } = await supabase.rpc(
-              "archive_and_reset_pairing",
-              { monster_uuid: monsterId, next_question: q }
-            );
-            if (rpcErr) {
-              console.warn(
-                "archive_and_reset_pairing failed:",
-                rpcErr.message
-              );
-            }
-          }
-        }
+        await advancePairing(monsterId, pairing.question);
       } catch (e) {
-        console.warn("auto-advance failed:", e);
+        if (!(e instanceof ApiError) || e.status !== 409) {
+          console.warn("auto-advance failed:", e);
+        }
       } finally {
         setSubmitting(false);
       }
@@ -263,8 +162,6 @@ function PairingModal({
     pairing,
     allAnswered,
     myAnswer,
-    members,
-    currentUserId,
     monsterId,
     onClose,
   ]);
@@ -337,9 +234,6 @@ function PairingModal({
                       </View>
                     )}
                   </ScrollView>
-                  {/* <Text style={styles.hintText}>
-                    Feche para a próxima pergunta.
-                  </Text> */}
                 </>
               ) : myAnswer ? (
                 <View style={styles.waitingBox}>
@@ -390,8 +284,6 @@ function PairingModal({
   );
 }
 
-// --- diário (history) modal ------------------------------------------------
-
 function DiaryModal({
   monsterId,
   visible,
@@ -401,8 +293,9 @@ function DiaryModal({
   visible: boolean;
   onClose: () => void;
 }) {
+  const { session } = useSession();
+  const currentUserId = session?.user.id ?? null;
   const [history, setHistory] = useState<HistoryRow[]>([]);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -413,34 +306,14 @@ function DiaryModal({
     setError(null);
 
     (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (cancelled) return;
-      setCurrentUserId(user?.id ?? null);
-
-      const { data, error: histErr } = await supabase
-        .from("monster_pairing_history")
-        .select("id, question, answers, answered_at")
-        .eq("monster_id", monsterId)
-        .order("answered_at", { ascending: false });
-
-      if (cancelled) return;
-
-      if (histErr) {
-        setError(histErr.message);
-        setLoading(false);
-        return;
+      try {
+        const entries = await getHistory(monsterId);
+        if (cancelled) return;
+        setHistory(entries);
+      } catch (err) {
+        if (cancelled) return;
+        setError(friendlyError(err));
       }
-
-      setHistory(
-        (data ?? []).map((h: any) => ({
-          id: h.id,
-          question: h.question,
-          answers: (h.answers as Record<string, string>) ?? {},
-          answered_at: h.answered_at,
-        }))
-      );
       setLoading(false);
     })();
 
@@ -524,94 +397,48 @@ function DiaryModal({
   );
 }
 
-// --- home screen -----------------------------------------------------------
-
 export default function Home() {
-  const { width, height } = useWindowDimensions();
   const { monster } = useSession();
   const frank = useRef<FrankHandle>(null);
   const [pairingOpen, setPairingOpen] = useState(false);
   const [diaryOpen, setDiaryOpen] = useState(false);
 
-  useEffect(() => {
-    if (!monster) return;
-    let cancelled = false;
-
-    (async () => {
-      const {
-        data: { user },
-        error: userErr,
-      } = await supabase.auth.getUser();
-      const { data: member, error: memberErr } = await supabase
-        .from("monster_members")
-        .select("monster_id, user_id")
-        .eq("monster_id", monster.id)
-        .maybeSingle();
-
-      if (cancelled) return;
-      console.log({
-        user: user?.id,
-        userErr,
-        member,
-        memberErr,
-        monsterId: monster.id,
-      });
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [monster?.id]);
-
-  const scaleX = width / BASE_WIDTH;
-  const scaleY = height / BASE_HEIGHT;
-  const squareW = SQUARE_BASE * scaleX;
-  const squareH = SQUARE_BASE * scaleY;
-
   return (
-    <ImageBackground
-      source={require("../assets/bgs/telaPrincipal.jpg")}
-      style={[styles.background, { width, height }]}
-      resizeMode="stretch"
-    >
+    <>
+      <Scene art={HOME_ART}>
+        {(scene) => {
+          if (!monster) return null;
+          const feet = scene.point(FRANK_FEET.x, FRANK_FEET.y);
+          return (
+            <>
+              <Frank
+                ref={frank}
+                monsterId={monster.id}
+                box={{ centerX: feet.x, feetY: feet.y, width: HOME_ART.width * scene.scale }}
+              />
+
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setPairingOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Abrir pergunta para cuidadores"
+                style={[styles.squareRed, scene.rect(PAIRING_SPOT)]}
+              />
+
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setDiaryOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Abrir diário"
+                style={[styles.squareGreen, scene.rect(DIARY_SPOT)]}
+              />
+            </>
+          );
+        }}
+      </Scene>
+
       {monster && (
         <>
-          <Frank ref={frank} monsterId={monster.id} placement="home" />
-
-          {/* Pair-question hotspot (red) — top-right */}
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={() => setPairingOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Abrir pergunta para cuidadores"
-            style={[
-              styles.squareRed,
-              {
-                width: squareW,
-                height: squareH,
-                right: width * 0.08,
-                bottom: height * 0.55,
-              },
-            ]}
-          />
-
-          {/* Diário hotspot (green) — bottom-left */}
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={() => setDiaryOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Abrir diário"
-            style={[
-              styles.squareGreen,
-              {
-                width: squareW,
-                height: squareH,
-                left: width * 0.02,
-                bottom: height * 0.68,
-              },
-            ]}
-          />
-
           <PairingModal
             monsterId={monster.id}
             visible={pairingOpen}
@@ -625,19 +452,16 @@ export default function Home() {
           />
         </>
       )}
-    </ImageBackground>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  background: { position: "absolute", top: 0, left: 0 },
   statsSlot: { position: "absolute" },
 
-  /* transparent tappable hotspots on the home background */
   squareRed: { position: "absolute", backgroundColor: "rgba(255,0,0,0)" },
   squareGreen: { position: "absolute", backgroundColor: "rgba(0,255,0,0)" },
 
-  /* ---- modal ---- */
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.55)",
@@ -666,7 +490,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
 
-  /* ---- popup ---- */
   popup: {
     backgroundColor: colors.background,
     borderRadius: 16,
@@ -710,7 +533,6 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
 
-  /* ---- input ---- */
   input: {
     borderWidth: 2,
     borderColor: colors.ink,
@@ -724,7 +546,6 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
   },
 
-  /* ---- primary button (Enviar) ---- */
   primaryBtn: {
     backgroundColor: colors.ink,
     paddingVertical: 14,
@@ -739,7 +560,6 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 
-  /* ---- answers list (pair modal) ---- */
   answersScroll: { maxHeight: 260 },
   answerCard: {
     borderWidth: 2,
@@ -762,7 +582,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
-  /* ---- waiting (pair modal) ---- */
   waitingBox: { gap: 12, alignItems: "center" },
   myAnswerBox: {
     borderWidth: 2,
@@ -790,7 +609,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  /* ---- diário (history) ---- */
   historyScroll: { maxHeight: 420 },
   historyCard: {
     borderWidth: 2,

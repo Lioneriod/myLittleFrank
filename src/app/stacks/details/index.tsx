@@ -28,7 +28,6 @@ export default function Details() {
           </View>
         </View>
 
-        {/* Gallery Photos */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Gallery Photos</Text>
@@ -44,11 +43,9 @@ export default function Details() {
             <View style={styles.galleryImage} />
             <View style={styles.galleryImage} />
             <View style={styles.galleryImage} />
-            {/* Add more gallery images */}
           </ScrollView>
         </View>
 
-        {/* Details Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Details</Text>
           <View style={styles.detailsGrid}>
@@ -64,11 +61,9 @@ export default function Details() {
               <Ruler size={24} color="#50F077" />
               <Text style={styles.detailText}>1000 sqft</Text>
             </View>
-            {/* Add more detail items as per the image (e.g., 'Hotel' icon) */}
           </View>
         </View>
 
-        {/* Description */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Description</Text>
           <Text style={styles.descriptionText}>
@@ -80,7 +75,6 @@ export default function Details() {
           </Text>
         </View>
 
-        {/* Facilities */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Facilities</Text>
           <View style={styles.facilitiesGrid}>
@@ -111,7 +105,6 @@ export default function Details() {
           </View>
         </View>
 
-        {/* Reviews Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Review</Text>
@@ -126,7 +119,6 @@ export default function Details() {
             </TouchableOpacity>
           </View>
 
-          {/* Individual Reviews */}
           <View style={styles.reviewCard}>
             <View style={styles.reviewHeader}>
               <View style={styles.reviewerAvatar} />
@@ -181,7 +173,6 @@ export default function Details() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-      {/* Fixed Bottom Bar */}
       <View style={styles.bottomBar}>
         <Text style={styles.priceText}>
           $29<Text style={styles.pricePerNight}> / night</Text>
@@ -197,10 +188,10 @@ export default function Details() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0C0C0C", // Dark background color
+    backgroundColor: "#0C0C0C",
   },
   scrollViewContent: {
-    paddingBottom: 100, // To make space for the fixed bottom bar
+    paddingBottom: 100,
   },
   sectionPadding: {
     paddingHorizontal: 20,
@@ -209,12 +200,12 @@ const styles = StyleSheet.create({
   section: {
     paddingHorizontal: 20,
     paddingVertical: 15,
-    marginBottom: 10, // Spacing between sections
+    marginBottom: 10,
   },
   headerImageContainer: {
     width: "100%",
-    height: 250, // Adjust height as needed
-    backgroundColor: "#333", // Placeholder background
+    height: 250,
+    backgroundColor: "#333",
   },
   headerImage: {
     width: "100%",
@@ -255,11 +246,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   galleryImage: {
-    width: 120, // Adjust size as needed
+    width: 120,
     height: 100,
     borderRadius: 10,
     marginRight: 10,
-    backgroundColor: "#444", // Placeholder
+    backgroundColor: "#444",
   },
   detailsGrid: {
     flexDirection: "row",
@@ -269,7 +260,7 @@ const styles = StyleSheet.create({
   },
   detailItem: {
     alignItems: "center",
-    width: "30%", // Adjust for desired spacing
+    width: "30%",
     marginVertical: 10,
   },
   detailText: {
@@ -293,7 +284,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   facilityItem: {
-    width: "30%", // Adjust to fit 3 items per row
+    width: "30%",
     alignItems: "center",
     marginVertical: 10,
   },
@@ -306,24 +297,24 @@ const styles = StyleSheet.create({
   mapPlaceholder: {
     width: "100%",
     height: 200,
-    backgroundColor: "#333", // Placeholder for map
+    backgroundColor: "#333",
     borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
-    overflow: "hidden", // Ensure map image respects border radius
+    overflow: "hidden",
     position: "relative",
   },
   mapImage: {
     width: "100%",
     height: "100%",
-    resizeMode: "cover", // Or 'contain' depending on your map image
+    resizeMode: "cover",
   },
   mapPinOverlay: {
     position: "absolute",
     top: "50%",
     left: "50%",
-    marginLeft: -16, // Half of icon size to center
-    marginTop: -16, // Half of icon size to center
+    marginLeft: -16,
+    marginTop: -16,
   },
   starsContainer: {
     flexDirection: "row",
@@ -350,7 +341,7 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     marginRight: 10,
-    backgroundColor: "#555", // Placeholder
+    backgroundColor: "#555",
   },
   reviewerName: {
     color: "#E0E0E0",
@@ -362,7 +353,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   optionsButton: {
-    marginLeft: "auto", // Pushes to the right
+    marginLeft: "auto",
     padding: 5,
   },
   optionsDot: {
@@ -392,7 +383,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "#282828", // Darker background for the bottom bar
+    backgroundColor: "#282828",
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -412,13 +403,13 @@ const styles = StyleSheet.create({
     color: "#A0A0A0",
   },
   bookNowButton: {
-    backgroundColor: "#50F077", // Green button
-    borderRadius: 25, // Pill shape
+    backgroundColor: "#50F077",
+    borderRadius: 25,
     paddingVertical: 12,
     paddingHorizontal: 30,
   },
   bookNowButtonText: {
-    color: "#1C1C1C", // Dark text on green button
+    color: "#1C1C1C",
     fontWeight: "bold",
     fontSize: 16,
   },
