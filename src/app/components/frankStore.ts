@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getMonster, updateMonster } from "../../lib/api";
+import { ApiError, getMonster, updateMonster } from "../../lib/api";
 import {
   DEFAULT_FRANK_PARTS,
   FrankPartKey,
@@ -98,7 +98,8 @@ async function push(monsterId: string) {
     });
   } catch (err) {
     console.warn("[frankStore.push]", monsterId, err);
-    schedulePush(monsterId, RETRY_MS);
+    const rejected = err instanceof ApiError && err.status >= 400 && err.status < 500;
+    if (!rejected) schedulePush(monsterId, RETRY_MS);
   }
 }
 
