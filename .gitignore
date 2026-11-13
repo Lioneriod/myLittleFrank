@@ -29,7 +29,6 @@ yarn-error.*
 
 supabase/.temp/
 supabase/.branches/
-supabase/functions/.env
 
 *.tsbuildinfo
 app-example
