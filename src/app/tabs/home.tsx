@@ -17,13 +17,13 @@ import MonsterStats from "../../components/MonsterStats";
 import Frank, { type FrankHandle } from "../components/Frank";
 import Scene, { type SceneArt, type SceneRect } from "../../components/Scene";
 import {
-  ApiError,
+  BackendError,
   advancePairing,
   answerPairing,
   friendlyError,
   getHistory,
   getPairing,
-} from "@/src/lib/api";
+} from "@/src/backend";
 import { colors } from "../../theme";
 
 const HOME_ART: SceneArt = {
@@ -148,7 +148,7 @@ function PairingModal({
       try {
         await advancePairing(monsterId, pairing.question);
       } catch (e) {
-        if (!(e instanceof ApiError) || e.status !== 409) {
+        if (!(e instanceof BackendError) || e.status !== 409) {
           console.warn("auto-advance failed:", e);
         }
       } finally {

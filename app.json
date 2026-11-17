@@ -39,15 +39,7 @@
       "expo-font",
       "expo-web-browser",
       "expo-asset",
-      "expo-notifications",
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "usesCleartextTraffic": true
-          }
-        }
-      ]
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true

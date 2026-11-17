@@ -33,7 +33,7 @@ import {
   friendlyError,
   signOut,
   updateMonster,
-} from "../../lib/api";
+} from "../../backend";
 import { unregisterPushToken } from "../../lib/pushNotifications";
 
 const SETTINGS_KEY = "@my_little_frank/settings";

@@ -1,7 +1,7 @@
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import * as api from "./api";
+import * as backend from "../backend";
 
 let registeredToken: string | null = null;
 
@@ -45,7 +45,7 @@ export async function registerPushToken(): Promise<string | null> {
   if (status !== "granted") return null;
 
   const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId: easProjectId() });
-  await api.registerPushToken(token, Platform.OS);
+  await backend.registerPushToken(token, Platform.OS);
 
   registeredToken = token;
   return token;
@@ -56,8 +56,8 @@ export async function unregisterPushToken() {
   const token = registeredToken;
   registeredToken = null;
   try {
-    await api.unregisterPushToken(token);
+    await backend.unregisterPushToken(token);
   } catch (err) {
-    console.warn("Não foi possível remover o token de push:", api.friendlyError(err));
+    console.warn("Não foi possível remover o token de push:", backend.friendlyError(err));
   }
 }

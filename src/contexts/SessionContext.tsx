@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { Monster, Session, getMyMonster, onSessionChange } from "../lib/api";
+import { Monster, Session, getMyMonster, onSessionChange } from "../backend";
 import { registerPushToken } from "../lib/pushNotifications";
 
 type SessionState = {

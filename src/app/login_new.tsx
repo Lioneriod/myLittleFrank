@@ -12,7 +12,7 @@ import {
 import { Redirect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSession } from "../contexts/SessionContext";
-import { ApiError, friendlyError, signIn, signUp } from "../lib/api";
+import { BackendError, friendlyError, signIn, signUp } from "../backend";
 import { ChalkButton, ChalkCard, ChalkInput, ChalkLine } from "../components/Chalk";
 import { colors } from "../theme";
 
@@ -60,16 +60,10 @@ export default function Login() {
       if (mode === "signIn") {
         await signIn(cleanEmail, password);
       } else {
-        const { confirmationRequired } = await signUp(cleanEmail, password);
-        if (confirmationRequired) {
-          showDialog({
-            title: "Email de confirmação enviado",
-            message: "Confirme pelo link enviado para o seu e-mail.",
-          });
-        }
+        await signUp(cleanEmail, password);
       }
     } catch (err) {
-      if (err instanceof ApiError && err.code === "user_already_exists") {
+      if (err instanceof BackendError && err.code === "user_already_exists") {
         showDialog({
           title: "Conta já existe",
           message: "Tente entrar com a sua conta.",
