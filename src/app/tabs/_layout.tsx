@@ -11,9 +11,6 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSession } from "../../contexts/SessionContext";
 
-// As artes dos botões foram desenhadas como camadas de 1536x2048 (a tela inteira).
-// Os PNGs em buttons/cropped são recortes dessas camadas; x/y/w/h guardam onde cada
-// recorte ficava na camada original, para a barra ficar igual ao desenho.
 const LAYER_WIDTH = 1536;
 const BAR_TOP = 1717;
 const BAR_BOTTOM = 2048;
@@ -118,7 +115,6 @@ function ImageTabBar({ state, navigation }: BottomTabBarProps) {
 export default function TabsLayout() {
   const { session, monster, loading } = useSession();
 
-  // Sem login ou sem monstrinho, volta para o início do fluxo.
   if (loading) return null;
   if (!session || !monster) return <Redirect href="/" />;
 

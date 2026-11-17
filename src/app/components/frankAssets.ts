@@ -2,13 +2,7 @@ import { ImageSourcePropType } from "react-native";
 
 export type FrankPartKey = "skin" | "currentHat" | "currentTop" | "currentBottom";
 
-/** Every part is an image *path* (a string). */
 export type FrankParts = Record<FrankPartKey, string>;
-
-/**
- * Metro requires literal require() calls, so bundled assets must be listed here.
- * The key IS the path that gets persisted to the DB.
- */
 
 export const FRANK_ASSET_REGISTRY: Record<string, ImageSourcePropType> = {
   "frank/skin/default.png": require("../assets/frank/FrankDefault.png"),
@@ -21,7 +15,6 @@ export const FRANK_ASSET_REGISTRY: Record<string, ImageSourcePropType> = {
   "frank/tops/WhiteShirt.png": require("../assets/clothes/tops/ClothesWhiteshirt.png"),
 };
 
-/** Starting defaults. Persisted the first time the member row is written. */
 export const DEFAULT_FRANK_PARTS: FrankParts = {
   skin: "frank/skin/default.png",
   currentHat: "",
@@ -31,7 +24,6 @@ export const DEFAULT_FRANK_PARTS: FrankParts = {
 
 const PART_KEYS = Object.keys(DEFAULT_FRANK_PARTS) as FrankPartKey[];
 
-/** Never throws: unknown/missing/corrupt values fall back to defaults. */
 export function sanitizeFrankParts(input: unknown): FrankParts {
   const out: FrankParts = { ...DEFAULT_FRANK_PARTS };
   if (input && typeof input === "object") {
@@ -45,7 +37,6 @@ export function sanitizeFrankParts(input: unknown): FrankParts {
   return out;
 }
 
-/** Path → something <Image source> accepts. Remote URLs work too. */
 export function resolveFrankSource(path: string | undefined | null): ImageSourcePropType | undefined {
   if (!path) return undefined;
   const bundled = FRANK_ASSET_REGISTRY[path];

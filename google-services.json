@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "790896041144",
+    "project_id": "my-little-frank",
+    "storage_bucket": "my-little-frank.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:790896041144:android:9d96c5c47de4521cd7a84d",
+        "android_client_info": {
+          "package_name": "com.mylittlefrank.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBHqAiG8aJ9ekPEncPvxb8UgtTUmEMoWsg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

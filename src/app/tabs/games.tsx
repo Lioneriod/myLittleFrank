@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ImageBackground,
   Modal,
   Pressable,
   ScrollView,
@@ -10,26 +9,27 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import Scene, { type SceneArt, type SceneRect } from "../../components/Scene";
 
-/** Reference screen the base size was designed at. */
-const BASE_WIDTH = 800;
-const BASE_HEIGHT = 1200;
+const GAMES_ART: SceneArt = {
+  source: require("../assets/bgs/telaJogos.jpg"),
+  width: 1200,
+  height: 3000,
+  anchorY: 1500,
+  anchorTo: 0.5,
+};
 
-/** Base square side length at BASE_WIDTH × BASE_HEIGHT. */
-const SQUARE_BASE = 256 + 128;
+const TIC_TAC_TOE_SPOT: SceneRect = { x: 80, y: 853, w: 530, h: 630 };
+const MATH_QUIZ_SPOT: SceneRect = { x: 680, y: 1453, w: 470, h: 450 };
 
-/** Gap between tic-tac-toe cells. */
 const GAP = 6;
 
-/** Number of questions in the math quiz. */
 const TOTAL_QUESTIONS = 5;
 
 type GameKey = "red" | "blue";
 type Player = "pink" | "blue";
 type Cell = Player | null;
 type Outcome = Player | "draw" | null;
-
-/* ============================ TIC TAC TOE ============================ */
 
 const WIN_LINES: readonly [number, number, number][] = [
   [0, 1, 2], [3, 4, 5], [6, 7, 8],
@@ -123,8 +123,6 @@ function TicTacToe({ size }: { size: number }) {
     </View>
   );
 }
-
-/* ============================ MATH QUIZ ============================= */
 
 type Question = {
   text: string;
@@ -326,17 +324,9 @@ function MathQuiz() {
   );
 }
 
-/* ============================== SCREEN ============================== */
-
 export default function Games() {
   const { width, height } = useWindowDimensions();
   const [openGame, setOpenGame] = useState<GameKey | null>(null);
-
-  const scaleX = width / BASE_WIDTH;
-  const scaleY = height / BASE_HEIGHT;
-
-  const squareW = SQUARE_BASE * scaleX;
-  const squareH = SQUARE_BASE * scaleY;
 
   const closeGame = useCallback(() => setOpenGame(null), []);
 
@@ -347,46 +337,28 @@ export default function Games() {
   const boardSize = Math.min(contentW, contentH - 150);
 
   return (
-    <ImageBackground
-      source={require("../assets/bgs/telaJogos.jpg")}
-      style={[styles.background, { width, height }]}
-      resizeMode="stretch"
-    >
-      {/* Red: 8% from left, 60% from bottom — abre o jogo da velha */}
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={() => setOpenGame("red")}
-        accessibilityRole="button"
-        accessibilityLabel="Abrir jogo da velha"
-        style={[
-          styles.square,
-          styles.redSquare,
-          {
-            width: squareW,
-            height: squareH,
-            left: width * 0.08,
-            bottom: height * 0.6,
-          },
-        ]}
-      />
+    <>
+      <Scene art={GAMES_ART}>
+        {(scene) => (
+          <>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => setOpenGame("red")}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir jogo da velha"
+              style={[styles.square, styles.redSquare, scene.rect(TIC_TAC_TOE_SPOT)]}
+            />
 
-      {/* Blue: 50% from left, 25% from bottom — abre o quiz de matemática */}
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={() => setOpenGame("blue")}
-        accessibilityRole="button"
-        accessibilityLabel="Abrir quiz de matemática"
-        style={[
-          styles.square,
-          styles.blueSquare,
-          {
-            width: squareW,
-            height: squareH,
-            left: width * 0.50,
-            bottom: height * 0.25,
-          },
-        ]}
-      />
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => setOpenGame("blue")}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir quiz de matemática"
+              style={[styles.square, styles.blueSquare, scene.rect(MATH_QUIZ_SPOT)]}
+            />
+          </>
+        )}
+      </Scene>
 
       <Modal
         visible={openGame !== null}
@@ -419,17 +391,15 @@ export default function Games() {
           </View>
         </View>
       </Modal>
-    </ImageBackground>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  background: { position: "absolute", top: 0, left: 0 },
   square: { position: "absolute" },
   redSquare: { backgroundColor: "rgba(255, 0, 0, 0)" },
   blueSquare: { backgroundColor: "rgba(0, 0, 255, 0)" },
 
-  /* ---- modal ---- */
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.55)",
@@ -458,7 +428,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
 
-  /* ---- popup (green background shared by both games) ---- */
   popup: {
     backgroundColor: "#a5d6a7",
     borderRadius: 16,
@@ -466,7 +435,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
 
-  /* ---- shared game container ---- */
   gameContainer: {
     flex: 1,
     alignItems: "center",
@@ -476,7 +444,6 @@ const styles = StyleSheet.create({
   gameTitle: { fontSize: 20, fontWeight: "700", color: "#222" },
   statusText: { fontSize: 16, color: "#444", minHeight: 22 },
 
-  /* ---- tic tac toe ---- */
   board: { flexDirection: "row", flexWrap: "wrap", gap: GAP },
   cellBase: {
     borderRadius: 6,
@@ -488,7 +455,6 @@ const styles = StyleSheet.create({
   cellBlue: { backgroundColor: "#2196f3" },
   symbol: { fontWeight: "800", color: "#fff" },
 
-  /* ---- reset / replay button (shared) ---- */
   resetButton: {
     paddingHorizontal: 24,
     paddingVertical: 10,
@@ -498,7 +464,6 @@ const styles = StyleSheet.create({
   resetButtonPressed: { backgroundColor: "#111" },
   resetText: { color: "#fff", fontWeight: "600" },
 
-  /* ---- math quiz: question view ---- */
   progressText: { fontSize: 14, color: "#333" },
   questionBox: {
     paddingVertical: 20,
@@ -527,7 +492,6 @@ const styles = StyleSheet.create({
   optionText: { fontSize: 24, fontWeight: "700", color: "#333" },
   optionTextHighlighted: { color: "#fff" },
 
-  /* ---- math quiz: summary view ---- */
   summaryContainer: {
     flex: 1,
     alignItems: "center",

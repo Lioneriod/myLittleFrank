@@ -12,7 +12,13 @@ import {
 import { Redirect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSession } from "../contexts/SessionContext";
-import { Monster, friendlyError, supabase } from "../lib/supabase";
+import {
+  Monster,
+  createMonster as createMonsterRequest,
+  friendlyError,
+  joinMonster as joinMonsterRequest,
+  signOut,
+} from "../lib/api";
 import { ChalkButton, ChalkCard, ChalkInput, ChalkLine } from "../components/Chalk";
 import { colors } from "../theme";
 
@@ -20,11 +26,9 @@ const CODE_LENGTH = 6;
 
 type Busy = "create" | "join" | "continue" | null;
 
-// Primeiro acesso: gera o código de um monstrinho novo ou entra com o código de alguém.
 export default function Pair() {
   const { session, monster, refreshMonster } = useSession();
   const insets = useSafeAreaInsets();
-  // Monstrinho recém-criado: fica nesta tela mostrando o código até o usuário continuar.
   const [created, setCreated] = useState<Monster | null>(null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState<Busy>(null);
@@ -36,13 +40,12 @@ export default function Pair() {
   const createMonster = async () => {
     setError(null);
     setBusy("create");
-    const { data, error } = await supabase.rpc("create_monster");
-    setBusy(null);
-    if (error) {
-      setError(friendlyError(error));
-      return;
+    try {
+      setCreated(await createMonsterRequest());
+    } catch (err) {
+      setError(friendlyError(err));
     }
-    setCreated(data as Monster);
+    setBusy(null);
   };
 
   const joinMonster = async () => {
@@ -53,13 +56,13 @@ export default function Pair() {
     }
     setError(null);
     setBusy("join");
-    const { error } = await supabase.rpc("join_monster", { code: cleanCode });
-    if (error) {
+    try {
+      await joinMonsterRequest(cleanCode);
+    } catch (err) {
       setBusy(null);
-      setError(friendlyError(error));
+      setError(friendlyError(err));
       return;
     }
-    // Com o monstrinho carregado no contexto, o Redirect acima leva para a tela inicial.
     if (!(await refreshMonster())) {
       setBusy(null);
       setError("Você entrou, mas não conseguimos carregar o monstrinho. Tente de novo.");
@@ -194,7 +197,7 @@ export default function Pair() {
         {!created && (
           <Pressable
             accessibilityRole="button"
-            onPress={() => supabase.auth.signOut()}
+            onPress={() => signOut().catch((err) => setError(friendlyError(err)))}
             style={styles.signOut}
           >
             <Text style={styles.signOutText}>Sair desta conta</Text>

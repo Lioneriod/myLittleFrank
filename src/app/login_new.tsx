@@ -12,7 +12,7 @@ import {
 import { Redirect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSession } from "../contexts/SessionContext";
-import { friendlyError, supabase } from "../lib/supabase";
+import { ApiError, friendlyError, signIn, signUp } from "../lib/api";
 import { ChalkButton, ChalkCard, ChalkInput, ChalkLine } from "../components/Chalk";
 import { colors } from "../theme";
 
@@ -33,7 +33,6 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
 
-  // Assim que a sessão existir (login agora ou salva de antes), segue o fluxo.
   if (session) return <Redirect href="/" />;
 
   const switchMode = (next: Mode) => {
@@ -42,8 +41,6 @@ export default function Login() {
     setDialog(null);
   };
 
-  // Mostra o popup e já posiciona o usuário na aba de login,
-  // porque nos dois casos de signUp ele vai precisar entrar de qualquer jeito.
   const showDialog = (next: Dialog) => {
     switchMode("signIn");
     setDialog(next);
@@ -61,53 +58,25 @@ export default function Login() {
     setBusy(true);
     try {
       if (mode === "signIn") {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password,
-        });
-        if (error) setError(friendlyError(error));
+        await signIn(cleanEmail, password);
       } else {
-        const { data, error } = await supabase.auth.signUp({ email: cleanEmail, password });
-
-        if (error) {
-          // Versões/configurações mais antigas do Supabase retornam erro explícito
-          // quando o e-mail já existe. A versão atual NÃO retorna — ver abaixo.
-          if (
-            error.code === "user_already_exists" ||
-            /already registered/i.test(error.message)
-          ) {
-            showDialog({
-              title: "Conta já existe",
-              message: "Tente entrar com a sua conta.",
-            });
-          } else {
-            setError(friendlyError(error));
-          }
-        } else if (
-          data.user &&
-          Array.isArray(data.user.identities) &&
-          data.user.identities.length === 0
-        ) {
-          // Com "Confirm email" ligado, o Supabase não vaza existência de conta:
-          // para um e-mail já cadastrado ele devolve um usuário "ofuscado" com
-          // identities vazio, em vez de erro. É assim que se detecta hoje.
-          showDialog({
-            title: "Conta já existe",
-            message: "Tente entrar com a sua conta.",
-          });
-        } else if (!data.session) {
-          // Conta nova + "Confirm email" ligado: nenhuma sessão é retornada
-          // porque o usuário ainda precisa clicar no link do e-mail.
+        const { confirmationRequired } = await signUp(cleanEmail, password);
+        if (confirmationRequired) {
           showDialog({
             title: "Email de confirmação enviado",
             message: "Confirme pelo link enviado para o seu e-mail.",
           });
         }
-        // Se data.session existir, o "Confirm email" está desligado:
-        // o Redirect do topo assume e não há e-mail de confirmação a anunciar.
       }
     } catch (err) {
-      setError(friendlyError(err));
+      if (err instanceof ApiError && err.code === "user_already_exists") {
+        showDialog({
+          title: "Conta já existe",
+          message: "Tente entrar com a sua conta.",
+        });
+      } else {
+        setError(friendlyError(err));
+      }
     } finally {
       setBusy(false);
     }

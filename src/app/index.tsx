@@ -5,7 +5,6 @@ import { useSession } from "../contexts/SessionContext";
 import { ChalkButton } from "../components/Chalk";
 import { colors } from "../theme";
 
-// Decide para onde o usuário vai: login -> código do monstrinho -> tela inicial.
 export default function Index() {
   const { session, monster, loading, error, refreshMonster } = useSession();
   const [retrying, setRetrying] = useState(false);

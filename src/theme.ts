@@ -1,4 +1,3 @@
-// Paleta tirada das artes do app (fundos em giz verde, contorno preto, botões vermelhos).
 export const colors = {
   background: "#C7DCC9",
   backgroundDark: "#A8BCA9",
