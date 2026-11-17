@@ -8,7 +8,6 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "backend": "npm --prefix backend run dev",
     "test": "jest --watchAll",
     "lint": "expo lint"
   },
