@@ -61,6 +61,12 @@ describe("app", () => {
     const response = await request(app).get("/health");
     expect(response.headers["x-powered-by"]).toBeUndefined();
   });
+
+  it("pede para não guardar as respostas em cache", async () => {
+    const response = await request(app).get("/health");
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.headers.etag).toBeUndefined();
+  });
 });
 
 describe("poolConfig", () => {

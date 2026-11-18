@@ -41,6 +41,11 @@ function cors(origins: string[]): RequestHandler {
   };
 }
 
+const noStore: RequestHandler = (_req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+};
+
 const logRequests: RequestHandler = (req, res, next) => {
   const startedAt = Date.now();
   res.on("finish", () => {
@@ -68,7 +73,9 @@ export function createApp({ db, sendPush, corsOrigins, logRequests: log }: AppOp
   const auth = requireUser(db);
 
   app.disable("x-powered-by");
+  app.disable("etag");
   app.set("trust proxy", 1);
+  app.use(noStore);
   app.use(cors(corsOrigins));
   if (log) app.use(logRequests);
   app.use(express.json({ limit: "50kb" }));
