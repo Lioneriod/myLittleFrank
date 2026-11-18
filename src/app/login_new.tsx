@@ -12,7 +12,7 @@ import {
 import { Redirect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSession } from "../contexts/SessionContext";
-import { BackendError, friendlyError, signIn, signUp } from "../backend";
+import { ApiError, friendlyError, signIn, signUp } from "../api";
 import { ChalkButton, ChalkCard, ChalkInput, ChalkLine } from "../components/Chalk";
 import { colors } from "../theme";
 
@@ -63,7 +63,7 @@ export default function Login() {
         await signUp(cleanEmail, password);
       }
     } catch (err) {
-      if (err instanceof BackendError && err.code === "user_already_exists") {
+      if (err instanceof ApiError && err.code === "user_already_exists") {
         showDialog({
           title: "Conta já existe",
           message: "Tente entrar com a sua conta.",

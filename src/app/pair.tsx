@@ -18,7 +18,7 @@ import {
   friendlyError,
   joinMonster as joinMonsterRequest,
   signOut,
-} from "../backend";
+} from "../api";
 import { ChalkButton, ChalkCard, ChalkInput, ChalkLine } from "../components/Chalk";
 import { colors } from "../theme";
 
