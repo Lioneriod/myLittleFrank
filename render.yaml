@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: my-little-frank-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: EXPO_ACCESS_TOKEN
+        sync: false
+      - key: CORS_ORIGINS
+        value: http://localhost:8081
