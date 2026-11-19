@@ -1,11 +1,10 @@
-import { existsSync } from "node:fs";
 import { createApp } from "./app";
 import { checkDatabase, createPgDatabase } from "./db";
-import { readEnv } from "./env";
+import { loadEnvFile, readEnv } from "./env";
 import { expoPushSender } from "./services/push";
 
 async function main() {
-  if (existsSync(".env")) process.loadEnvFile(".env");
+  loadEnvFile(".env");
   const env = readEnv();
 
   const db = createPgDatabase(env.databaseUrl, env.databaseSsl);

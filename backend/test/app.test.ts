@@ -1,6 +1,10 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { poolConfig } from "../src/db";
+import { loadEnvFile } from "../src/env";
 import { createTestApp, createTestDatabase, type App, type TestDatabase } from "./helpers";
 
 let db: TestDatabase;
@@ -78,5 +82,22 @@ describe("poolConfig", () => {
 
   it("desliga SSL quando pedido", () => {
     expect(poolConfig("postgresql://postgres:postgres@localhost:5432/frank", false).ssl).toBe(false);
+  });
+});
+
+describe("loadEnvFile", () => {
+  it("lê o .env sem sobrescrever variáveis que já existem", () => {
+    const dir = mkdtempSync(join(tmpdir(), "frank-env-"));
+    const file = join(dir, ".env");
+    writeFileSync(file, 'FRANK_A=um\r\nFRANK_B="dois = 2"\n# FRANK_C=tres\nFRANK_D=quatro\n');
+    process.env.FRANK_D = "ja-existia";
+
+    loadEnvFile(file);
+
+    expect(process.env.FRANK_A).toBe("um");
+    expect(process.env.FRANK_B).toBe("dois = 2");
+    expect(process.env.FRANK_C).toBeUndefined();
+    expect(process.env.FRANK_D).toBe("ja-existia");
+    for (const key of ["FRANK_A", "FRANK_B", "FRANK_D"]) delete process.env[key];
   });
 });

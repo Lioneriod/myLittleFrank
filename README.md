@@ -22,7 +22,7 @@ Este é um projeto [Expo](https://expo.dev). Utilizamos o projeto [Helia](https:
 - Expo Notifications, para as notificações push
 
 #### Back-end
-- Node.js 22
+- Node.js 18 ou mais novo (o Render usa o Node 22)
 - Express 5
 - TypeScript
 - PostgreSQL (hospedado no Supabase), acessado com o node-postgres (`pg`)
