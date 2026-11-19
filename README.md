@@ -161,7 +161,7 @@ npx supabase link --project-ref sowapejiwnjfqtmxxgam
 ```
 
 ```bash
-npx supabase db push
+npx supabase db push --remote
 ```
 
 A migração `api_no_render` cria a tabela `user_tokens` e tira todo o acesso da chave publicável do Supabase. Depois dela, só a API acessa os dados, e versões antigas do APK (que falavam direto com o Supabase) param de funcionar.

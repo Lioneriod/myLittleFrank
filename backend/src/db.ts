@@ -73,7 +73,7 @@ export async function checkDatabase(db: Queryable): Promise<void> {
     await db.query("select 1 from public.user_tokens limit 1");
   } catch {
     throw new Error(
-      "A tabela user_tokens não existe. Aplique as migrações com: npx supabase db push",
+      "A tabela user_tokens não existe. Aplique as migrações com: npx supabase db push --remote",
     );
   }
 }
