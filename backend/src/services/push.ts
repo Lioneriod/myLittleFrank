@@ -1,94 +1,98 @@
-import { env } from "../env";
+import type { Queryable } from "../db";
 import { fail } from "../errors";
-import { admin, unwrap } from "../supabase";
 
-const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
-const TOKEN_PATTERN = /^Expo(nent)?PushToken\[.+\]$/;
-const PLATFORMS = ["ios", "android"];
-
-type ExpoTicket = {
-  status: "ok" | "error";
-  message?: string;
-  details?: { error?: string };
+export type PushMessage = {
+  to: string;
+  title: string;
+  body: string;
+  sound: "default";
+  data: Record<string, unknown>;
 };
 
-function validToken(token: unknown): string {
-  if (typeof token !== "string" || !TOKEN_PATTERN.test(token)) fail("invalid_push_token");
-  return token;
+export type PushTicket = { status: "ok" | "error"; details?: { error?: string } };
+
+export type PushSender = (messages: PushMessage[]) => Promise<PushTicket[]>;
+
+const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+const PUSH_TOKEN_PATTERN = /^Expo(nent)?PushToken\[.+\]$/;
+const MAX_PUSH_TOKEN_LENGTH = 200;
+const PLATFORMS = ["ios", "android"];
+
+export function expoPushSender(accessToken?: string): PushSender {
+  return async (messages) => {
+    const response = await fetch(EXPO_PUSH_URL, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify(messages),
+    });
+    if (!response.ok) throw new Error(`A API de push do Expo respondeu ${response.status}`);
+    const { data } = (await response.json()) as { data: PushTicket[] };
+    return data;
+  };
 }
 
 export async function registerPushToken(
+  db: Queryable,
   userId: string,
-  rawToken: unknown,
-  platform: unknown,
+  token: string,
+  platform: string,
 ): Promise<void> {
-  const token = validToken(rawToken);
-  if (typeof platform !== "string" || !PLATFORMS.includes(platform)) fail("invalid_push_token");
+  const valid =
+    token.length <= MAX_PUSH_TOKEN_LENGTH &&
+    PUSH_TOKEN_PATTERN.test(token) &&
+    PLATFORMS.includes(platform);
+  if (!valid) fail("invalid_push_token");
 
-  const { error } = await admin
-    .from("push_tokens")
-    .upsert(
-      { token, user_id: userId, platform, updated_at: new Date().toISOString() },
-      { onConflict: "token" },
-    );
-  if (error) throw error;
+  await db.query(
+    `insert into public.push_tokens (token, user_id, platform)
+     values ($1, $2, $3)
+     on conflict (token) do update
+       set user_id = excluded.user_id, platform = excluded.platform, updated_at = now()`,
+    [token, userId, platform],
+  );
 }
 
-export async function unregisterPushToken(userId: string, rawToken: unknown): Promise<void> {
-  const token = validToken(rawToken);
-  const { error } = await admin
-    .from("push_tokens")
-    .delete()
-    .eq("token", token)
-    .eq("user_id", userId);
-  if (error) throw error;
+export async function unregisterPushToken(db: Queryable, userId: string, token: string) {
+  await db.query("delete from public.push_tokens where token = $1 and user_id = $2", [
+    token,
+    userId,
+  ]);
 }
 
 export async function notifyPartners(
+  db: Queryable,
+  send: PushSender,
   userId: string,
   monsterId: string,
-  memberIds: string[],
-): Promise<{ sent: number; removed_tokens: number }> {
-  const partnerIds = memberIds.filter((id) => id !== userId);
-  if (partnerIds.length === 0) return { sent: 0, removed_tokens: 0 };
+  members: string[],
+): Promise<number> {
+  const partners = members.filter((id) => id !== userId);
+  if (partners.length === 0) return 0;
 
-  const tokens = unwrap(
-    await admin.from("push_tokens").select("token").in("user_id", partnerIds),
-  ).map((row) => row.token as string);
-  if (tokens.length === 0) return { sent: 0, removed_tokens: 0 };
+  const { rows } = await db.query<{ token: string }>(
+    "select token from public.push_tokens where user_id = any($1::uuid[])",
+    [partners],
+  );
+  const tokens = rows.map((row) => row.token);
+  if (tokens.length === 0) return 0;
 
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    "Content-Type": "application/json",
-  };
-  if (env.expoAccessToken) headers.Authorization = `Bearer ${env.expoAccessToken}`;
+  const tickets = await send(
+    tokens.map((to) => ({
+      to,
+      title: "My Little Frank",
+      body: "Seu parceiro respondeu!",
+      sound: "default",
+      data: { type: "partner_answered", monster_id: monsterId },
+    })),
+  );
 
-  const response = await fetch(EXPO_PUSH_URL, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(
-      tokens.map((token) => ({
-        to: token,
-        title: "My Little Frank",
-        body: "Seu parceiro respondeu!",
-        sound: "default",
-        data: { type: "partner_answered", monster_id: monsterId },
-      })),
-    ),
-  });
-  if (!response.ok) {
-    throw new Error(`A API de push do Expo respondeu ${response.status}: ${await response.text()}`);
+  const stale = tokens.filter((_, i) => tickets[i]?.details?.error === "DeviceNotRegistered");
+  if (stale.length > 0) {
+    await db.query("delete from public.push_tokens where token = any($1::text[])", [stale]);
   }
-
-  const { data: tickets } = (await response.json()) as { data: ExpoTicket[] };
-  const staleTokens = tokens.filter((_, i) => tickets[i]?.details?.error === "DeviceNotRegistered");
-  if (staleTokens.length > 0) {
-    const { error } = await admin.from("push_tokens").delete().in("token", staleTokens);
-    if (error) console.error("Não foi possível apagar os tokens de push antigos:", error);
-  }
-
-  return {
-    sent: tickets.filter((ticket) => ticket.status === "ok").length,
-    removed_tokens: staleTokens.length,
-  };
+  return tickets.filter((ticket) => ticket.status === "ok").length;
 }

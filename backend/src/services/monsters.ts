@@ -1,31 +1,31 @@
 import { randomInt } from "node:crypto";
+import { isUniqueViolation, type Database, type Queryable } from "../db";
 import { fail } from "../errors";
-import { withLock } from "../locks";
-import { admin, isForeignKeyViolation, isUniqueViolation, unwrap } from "../supabase";
-import { isPlainObject } from "../validation";
-
-const MONSTER_COLUMNS = "id, name, invite_code, created_at, frank_parts, frank_parts_updated_at";
-const INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const INVITE_LENGTH = 6;
-const INVITE_ATTEMPTS = 5;
-const MAX_MEMBERS = 2;
-const MAX_NAME_LENGTH = 30;
-const MAX_FRANK_PARTS_BYTES = 8192;
+import { isPlainObject, isUuid } from "../validation";
 
 export type Monster = {
   id: string;
   name: string;
   invite_code: string;
-  created_at: string;
+  created_at: Date;
   frank_parts: Record<string, unknown>;
-  frank_parts_updated_at: string;
+  frank_parts_updated_at: Date;
 };
 
-export type MonsterPatch = {
+export type MonsterChanges = {
   name?: unknown;
   frank_parts?: unknown;
   frank_parts_updated_at?: unknown;
 };
+
+const COLUMNS = "m.id, m.name, m.invite_code, m.created_at, m.frank_parts, m.frank_parts_updated_at";
+const INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const INVITE_LENGTH = 6;
+const INVITE_ATTEMPTS = 5;
+const SLOTS = [1, 2];
+const MAX_NAME_LENGTH = 30;
+const MAX_PARTS_LENGTH = 10_000;
+const DEFAULT_NAME = "Frank";
 
 function generateInviteCode(): string {
   let code = "";
@@ -35,189 +35,176 @@ function generateInviteCode(): string {
   return code;
 }
 
-async function monsterIdOfUser(userId: string): Promise<string | null> {
-  const { data, error } = await admin
-    .from("monster_members")
-    .select("monster_id")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (error) throw error;
-  return (data?.monster_id as string | undefined) ?? null;
+function cleanName(name: unknown): string {
+  if (typeof name !== "string") fail("invalid_name");
+  const clean = name.trim();
+  if (clean.length < 1 || clean.length > MAX_NAME_LENGTH) fail("invalid_name");
+  return clean;
 }
 
-async function findMonsterById(monsterId: string): Promise<Monster | null> {
-  const { data, error } = await admin
-    .from("monsters")
-    .select(MONSTER_COLUMNS)
-    .eq("id", monsterId)
-    .maybeSingle();
-  if (error) throw error;
-  return data as Monster | null;
-}
-
-export async function listMemberIds(monsterId: string): Promise<string[]> {
-  const rows = unwrap(
-    await admin
-      .from("monster_members")
-      .select("user_id")
-      .eq("monster_id", monsterId)
-      .order("joined_at", { ascending: true }),
-  );
-  return rows.map((row) => row.user_id as string);
-}
-
-export async function requireMembers(userId: string, monsterId: string): Promise<string[]> {
-  const memberIds = await listMemberIds(monsterId);
-  if (!memberIds.includes(userId)) fail("not_a_member");
-  return memberIds;
-}
-
-export async function findMonsterOfUser(userId: string): Promise<Monster | null> {
-  const monsterId = await monsterIdOfUser(userId);
-  return monsterId ? findMonsterById(monsterId) : null;
-}
-
-export async function getMonster(userId: string, monsterId: string): Promise<Monster> {
-  await requireMembers(userId, monsterId);
-  return (await findMonsterById(monsterId)) ?? fail("monster_not_found");
-}
-
-async function insertMonster(userId: string, name: string): Promise<Monster> {
-  for (let attempt = 0; attempt < INVITE_ATTEMPTS; attempt++) {
-    const { data, error } = await admin
-      .from("monsters")
-      .insert({ name, invite_code: generateInviteCode(), created_by: userId })
-      .select(MONSTER_COLUMNS)
-      .single();
-    if (!error) return data as Monster;
-    if (!isUniqueViolation(error)) throw error;
+function cleanParts(parts: unknown): Record<string, unknown> {
+  if (!isPlainObject(parts) || JSON.stringify(parts).length > MAX_PARTS_LENGTH) {
+    fail("invalid_request");
   }
-  throw new Error("Não foi possível gerar um código de convite único.");
+  return parts;
 }
 
-export function createMonster(userId: string, rawName: unknown): Promise<Monster> {
-  const name = typeof rawName === "string" && rawName.trim() ? rawName.trim() : "Frank";
-  if (name.length > MAX_NAME_LENGTH) fail("invalid_name");
+function cleanTimestamp(value: unknown): string {
+  if (typeof value !== "string" || Number.isNaN(Date.parse(value))) fail("invalid_request");
+  return value;
+}
 
-  return withLock(`user:${userId}`, async () => {
-    if (await monsterIdOfUser(userId)) fail("already_has_monster");
+export async function listMembers(db: Queryable, monsterId: string): Promise<string[]> {
+  const { rows } = await db.query<{ user_id: string }>(
+    "select user_id from public.monster_members where monster_id = $1 order by slot",
+    [monsterId],
+  );
+  return rows.map((row) => row.user_id);
+}
 
-    const monster = await insertMonster(userId, name);
-    const { error } = await admin
-      .from("monster_members")
-      .insert({ monster_id: monster.id, user_id: userId });
-    if (error) {
-      await admin.from("monsters").delete().eq("id", monster.id);
-      if (isUniqueViolation(error)) fail("already_has_monster");
-      throw error;
+export async function requireMember(
+  db: Queryable,
+  monsterId: string,
+  userId: string,
+): Promise<string[]> {
+  if (!isUuid(monsterId)) fail("monster_not_found");
+  const members = await listMembers(db, monsterId);
+  if (members.includes(userId)) return members;
+
+  const { rows } = await db.query("select 1 from public.monsters where id = $1", [monsterId]);
+  return fail(rows.length > 0 ? "not_a_member" : "monster_not_found");
+}
+
+async function findMonster(db: Queryable, monsterId: string): Promise<Monster | null> {
+  const { rows } = await db.query<Monster>(
+    `select ${COLUMNS} from public.monsters m where m.id = $1`,
+    [monsterId],
+  );
+  return rows[0] ?? null;
+}
+
+async function hasMonster(db: Queryable, userId: string): Promise<boolean> {
+  const { rows } = await db.query("select 1 from public.monster_members where user_id = $1", [
+    userId,
+  ]);
+  return rows.length > 0;
+}
+
+async function addMember(db: Queryable, monsterId: string, userId: string, slot: number) {
+  try {
+    await db.query(
+      "insert into public.monster_members (monster_id, user_id, slot) values ($1, $2, $3)",
+      [monsterId, userId, slot],
+    );
+  } catch (error) {
+    if (isUniqueViolation(error, "monster_members_user_id_key")) fail("already_has_monster");
+    if (isUniqueViolation(error, "monster_members_pkey")) fail("already_has_monster");
+    if (isUniqueViolation(error, "monster_members_slot_key")) fail("monster_full");
+    throw error;
+  }
+}
+
+export async function getMyMonster(db: Queryable, userId: string): Promise<Monster | null> {
+  const { rows } = await db.query<Monster>(
+    `select ${COLUMNS}
+     from public.monsters m
+     join public.monster_members mm on mm.monster_id = m.id
+     where mm.user_id = $1`,
+    [userId],
+  );
+  return rows[0] ?? null;
+}
+
+export async function getMonster(db: Queryable, userId: string, monsterId: string): Promise<Monster> {
+  await requireMember(db, monsterId, userId);
+  return (await findMonster(db, monsterId)) ?? fail("monster_not_found");
+}
+
+export async function createMonster(
+  db: Database,
+  userId: string,
+  name: unknown,
+): Promise<Monster> {
+  const monsterName = name === undefined || name === null || name === "" ? DEFAULT_NAME : cleanName(name);
+
+  return db.transaction(async (tx) => {
+    if (await hasMonster(tx, userId)) fail("already_has_monster");
+
+    for (let attempt = 0; attempt < INVITE_ATTEMPTS; attempt++) {
+      const { rows } = await tx.query<Monster>(
+        `insert into public.monsters as m (name, invite_code, created_by)
+         values ($1, $2, $3)
+         on conflict (invite_code) do nothing
+         returning ${COLUMNS}`,
+        [monsterName, generateInviteCode(), userId],
+      );
+      if (rows[0]) {
+        await addMember(tx, rows[0].id, userId, SLOTS[0]);
+        return rows[0];
+      }
     }
+    return fail("internal_error");
+  });
+}
+
+export async function joinMonster(db: Database, userId: string, code: string): Promise<Monster> {
+  const inviteCode = code.trim().toUpperCase();
+  if (!inviteCode) fail("invalid_code");
+
+  return db.transaction(async (tx) => {
+    if (await hasMonster(tx, userId)) fail("already_has_monster");
+
+    const { rows } = await tx.query<Monster>(
+      `select ${COLUMNS} from public.monsters m where m.invite_code = $1 for update`,
+      [inviteCode],
+    );
+    const monster = rows[0] ?? fail("invalid_code");
+
+    const taken = await tx.query<{ slot: number }>(
+      "select slot from public.monster_members where monster_id = $1",
+      [monster.id],
+    );
+    const usedSlots = taken.rows.map((row) => row.slot);
+    const slot = SLOTS.find((candidate) => !usedSlots.includes(candidate)) ?? fail("monster_full");
+
+    await addMember(tx, monster.id, userId, slot);
     return monster;
   });
 }
 
-export function joinMonster(userId: string, rawCode: unknown): Promise<Monster> {
-  const code = typeof rawCode === "string" ? rawCode.trim().toUpperCase() : "";
-  if (!code) fail("invalid_code");
-
-  return withLock(`user:${userId}`, async () => {
-    if (await monsterIdOfUser(userId)) fail("already_has_monster");
-
-    const { data, error } = await admin
-      .from("monsters")
-      .select(MONSTER_COLUMNS)
-      .eq("invite_code", code)
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) fail("invalid_code");
-    const monster = data as Monster;
-
-    return withLock(`monster:${monster.id}`, async () => {
-      const memberIds = await listMemberIds(monster.id);
-      if (memberIds.length >= MAX_MEMBERS) fail("monster_full");
-
-      const { error: joinError } = await admin
-        .from("monster_members")
-        .insert({ monster_id: monster.id, user_id: userId });
-      if (joinError) {
-        if (isUniqueViolation(joinError)) fail("already_has_monster");
-        if (isForeignKeyViolation(joinError)) fail("invalid_code");
-        throw joinError;
-      }
-      return monster;
-    });
-  });
-}
-
-function validatedPatch(patch: MonsterPatch): Record<string, unknown> {
-  const changes: Record<string, unknown> = {};
-
-  if (patch.name !== undefined) {
-    const name = typeof patch.name === "string" ? patch.name.trim() : "";
-    if (name.length < 1 || name.length > MAX_NAME_LENGTH) fail("invalid_name");
-    changes.name = name;
-  }
-
-  if (patch.frank_parts !== undefined) {
-    if (
-      !isPlainObject(patch.frank_parts) ||
-      JSON.stringify(patch.frank_parts).length > MAX_FRANK_PARTS_BYTES
-    ) {
-      fail("invalid_frank_parts");
-    }
-    let updatedAt = new Date();
-    if (patch.frank_parts_updated_at !== undefined) {
-      if (typeof patch.frank_parts_updated_at !== "string") fail("invalid_frank_parts");
-      updatedAt = new Date(patch.frank_parts_updated_at);
-      if (Number.isNaN(updatedAt.getTime())) fail("invalid_frank_parts");
-    }
-    changes.frank_parts = patch.frank_parts;
-    changes.frank_parts_updated_at = updatedAt.toISOString();
-  }
-
-  if (Object.keys(changes).length === 0) fail("nothing_to_update");
-  return changes;
-}
-
 export async function updateMonster(
+  db: Queryable,
   userId: string,
   monsterId: string,
-  patch: MonsterPatch,
+  changes: MonsterChanges,
 ): Promise<Monster> {
-  const changes = validatedPatch(patch);
-  await requireMembers(userId, monsterId);
+  const sets: string[] = [];
+  const params: unknown[] = [monsterId];
+  const set = (column: string, value: unknown, cast = "") => {
+    params.push(value);
+    sets.push(`${column} = $${params.length}${cast}`);
+  };
 
-  const { data, error } = await admin
-    .from("monsters")
-    .update(changes)
-    .eq("id", monsterId)
-    .select(MONSTER_COLUMNS)
-    .maybeSingle();
-  if (error) throw error;
-  return (data as Monster | null) ?? fail("monster_not_found");
+  if (changes.name !== undefined) set("name", cleanName(changes.name));
+  if (changes.frank_parts !== undefined) {
+    set("frank_parts", JSON.stringify(cleanParts(changes.frank_parts)), "::jsonb");
+    if (changes.frank_parts_updated_at === undefined) sets.push("frank_parts_updated_at = now()");
+  }
+  if (changes.frank_parts_updated_at !== undefined) {
+    set("frank_parts_updated_at", cleanTimestamp(changes.frank_parts_updated_at), "::timestamptz");
+  }
+
+  await requireMember(db, monsterId, userId);
+  if (sets.length === 0) return (await findMonster(db, monsterId)) ?? fail("monster_not_found");
+
+  const { rows } = await db.query<Monster>(
+    `update public.monsters as m set ${sets.join(", ")} where m.id = $1 returning ${COLUMNS}`,
+    params,
+  );
+  return rows[0] ?? fail("monster_not_found");
 }
 
-export async function deleteMonster(userId: string, monsterId: string): Promise<void> {
-  await requireMembers(userId, monsterId);
-  const { error } = await admin.from("monsters").delete().eq("id", monsterId);
-  if (error) throw error;
-}
-
-export function leaveMonster(userId: string, monsterId: string): Promise<{ deleted_monster: boolean }> {
-  return withLock(`monster:${monsterId}`, async () => {
-    const memberIds = await requireMembers(userId, monsterId);
-
-    const { error } = await admin
-      .from("monster_members")
-      .delete()
-      .eq("monster_id", monsterId)
-      .eq("user_id", userId);
-    if (error) throw error;
-
-    const deletedMonster = memberIds.length === 1;
-    if (deletedMonster) {
-      const { error: deleteError } = await admin.from("monsters").delete().eq("id", monsterId);
-      if (deleteError) throw deleteError;
-    }
-    return { deleted_monster: deletedMonster };
-  });
+export async function deleteMonster(db: Queryable, userId: string, monsterId: string): Promise<void> {
+  await requireMember(db, monsterId, userId);
+  await db.query("delete from public.monsters where id = $1", [monsterId]);
 }

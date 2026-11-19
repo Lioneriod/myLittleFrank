@@ -1,15 +1,15 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022"],
-    "module": "Preserve",
-    "moduleResolution": "Bundler",
+    "lib": ["ES2023"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
     "types": ["node"],
     "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true,
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true
   },
-  "include": ["src"]
+  "include": ["src", "test", "vitest.config.mts"]
 }

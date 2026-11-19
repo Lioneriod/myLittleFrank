@@ -1,62 +1,94 @@
-import express, { type NextFunction, type Request, type Response } from "express";
-import { HttpError } from "./errors";
-import { accountRouter } from "./routes/account";
-import { authRouter } from "./routes/auth";
-import { monstersRouter } from "./routes/monsters";
-import { pushTokensRouter } from "./routes/pushTokens";
+import express, { type ErrorRequestHandler, type RequestHandler } from "express";
+import type { Database } from "./db";
+import { HttpError, fail } from "./errors";
+import { requireUser } from "./auth/middleware";
+import type { PushSender } from "./services/push";
+import { accountRoutes } from "./routes/account";
+import { authRoutes } from "./routes/auth";
+import { monsterRoutes } from "./routes/monsters";
+import { pushTokenRoutes } from "./routes/pushTokens";
 
-function cors(req: Request, res: Response, next: NextFunction) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "authorization, content-type");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-  if (req.method === "OPTIONS") {
+export type AppOptions = {
+  db: Database;
+  sendPush: PushSender;
+  corsOrigins: string[];
+  logRequests?: boolean;
+};
+
+const ALLOWED_METHODS = "GET, POST, PATCH, DELETE, OPTIONS";
+const ALLOWED_HEADERS = "authorization, content-type";
+
+function cors(origins: string[]): RequestHandler {
+  const anyOrigin = origins.includes("*");
+  return (req, res, next) => {
+    const origin = req.get("origin");
+    if (!origin || (!anyOrigin && !origins.includes(origin))) {
+      next();
+      return;
+    }
+    res.set("Access-Control-Allow-Origin", origin);
+    res.vary("Origin");
+    if (req.method !== "OPTIONS") {
+      next();
+      return;
+    }
+    res.set({
+      "Access-Control-Allow-Methods": ALLOWED_METHODS,
+      "Access-Control-Allow-Headers": ALLOWED_HEADERS,
+      "Access-Control-Max-Age": "600",
+    });
     res.status(204).end();
-    return;
-  }
-  next();
+  };
 }
 
-function logRequests(req: Request, res: Response, next: NextFunction) {
+const noStore: RequestHandler = (_req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+};
+
+const logRequests: RequestHandler = (req, res, next) => {
   const startedAt = Date.now();
   res.on("finish", () => {
-    console.log(`${req.method} ${req.path} ${res.statusCode} ${Date.now() - startedAt}ms`);
+    console.log(`${req.method} ${req.originalUrl.split("?")[0]} ${res.statusCode} ${Date.now() - startedAt}ms`);
   });
   next();
+};
+
+function toHttpError(error: unknown): HttpError {
+  if (error instanceof HttpError) return error;
+  const type = (error as { type?: string } | null)?.type;
+  if (type === "entity.parse.failed") return new HttpError("invalid_body");
+  if (type === "entity.too.large") return new HttpError("body_too_large");
+  console.error(error);
+  return new HttpError("internal_error");
 }
 
-function notFound() {
-  throw new HttpError("not_found");
-}
+const handleError: ErrorRequestHandler = (error, _req, res, _next) => {
+  const httpError = toHttpError(error);
+  res.status(httpError.status).json({ error: httpError.code, message: httpError.message });
+};
 
-function handleError(err: unknown, _req: Request, res: Response, _next: NextFunction) {
-  let error: HttpError;
-  if (err instanceof HttpError) {
-    error = err;
-  } else if ((err as { type?: string } | null)?.type === "entity.parse.failed") {
-    error = new HttpError("invalid_body");
-  } else {
-    console.error(err);
-    error = new HttpError("internal_error");
-  }
-  res.status(error.status).json({ error: error.code, message: error.message });
-}
-
-export function createApp() {
+export function createApp({ db, sendPush, corsOrigins, logRequests: log }: AppOptions) {
   const app = express();
+  const auth = requireUser(db);
+
   app.disable("x-powered-by");
-  app.use(cors);
-  app.use(logRequests);
-  app.use(express.json());
+  app.disable("etag");
+  app.set("trust proxy", 1);
+  app.use(noStore);
+  app.use(cors(corsOrigins));
+  if (log) app.use(logRequests);
+  app.use(express.json({ limit: "50kb" }));
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true });
   });
-  app.use("/auth", authRouter);
-  app.use("/account", accountRouter);
-  app.use("/monsters", monstersRouter);
-  app.use("/push-tokens", pushTokensRouter);
+  app.use("/api/auth", authRoutes(db, auth));
+  app.use("/api/account", accountRoutes(db, auth));
+  app.use("/api/monsters", monsterRoutes(db, auth, sendPush));
+  app.use("/api/push-tokens", pushTokenRoutes(db, auth));
 
-  app.use(notFound);
+  app.use(() => fail("not_found"));
   app.use(handleError);
   return app;
 }

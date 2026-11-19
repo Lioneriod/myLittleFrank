@@ -1,25 +1,33 @@
 {
-  "name": "my-little-frank-backend",
+  "name": "my-little-frank-api",
   "version": "1.0.0",
   "private": true,
-  "type": "module",
+  "main": "dist/server.js",
   "engines": {
-    "node": ">=20"
+    "node": ">=18.18"
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.119.0",
-    "dotenv": "^18.0.10",
+    "bcryptjs": "^3.0.3",
     "express": "^5.3.0",
-    "tsx": "^4.23.15"
+    "pg": "^8.23.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
     "@types/express": "^5.0.6",
     "@types/node": "^22.20.5",
-    "typescript": "^7.0.2"
+    "@types/pg": "^8.23.1",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.3.2",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3",
+    "vite": "^6.4.6",
+    "vitest": "^3.2.7"
   }
 }

@@ -11,7 +11,7 @@ import {
 import { Redirect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSession } from "../contexts/SessionContext";
-import { friendlyError, signIn, signUp } from "../lib/api";
+import { friendlyError, signIn, signUp } from "../api";
 import { ChalkButton, ChalkCard, ChalkInput, ChalkLine } from "../components/Chalk";
 import { colors } from "../theme";
 
@@ -25,20 +25,17 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   if (session) return <Redirect href="/" />;
 
   const switchMode = (next: Mode) => {
     setMode(next);
     setError(null);
-    setNotice(null);
   };
 
   const submit = async () => {
     const cleanEmail = email.trim().toLowerCase();
     setError(null);
-    setNotice(null);
     if (!cleanEmail || !password) {
       setError("Preencha e-mail e senha.");
       return;
@@ -49,11 +46,7 @@ export default function Login() {
       if (mode === "signIn") {
         await signIn(cleanEmail, password);
       } else {
-        const { confirmationRequired } = await signUp(cleanEmail, password);
-        if (confirmationRequired) {
-          setMode("signIn");
-          setNotice("Conta criada! Confirme pelo link que enviamos para o seu e-mail e depois entre.");
-        }
+        await signUp(cleanEmail, password);
       }
     } catch (err) {
       setError(friendlyError(err));
@@ -119,11 +112,6 @@ export default function Login() {
           {error && (
             <Text style={styles.error} accessibilityLiveRegion="polite">
               {error}
-            </Text>
-          )}
-          {notice && (
-            <Text style={styles.notice} accessibilityLiveRegion="polite">
-              {notice}
             </Text>
           )}
 
@@ -214,10 +202,5 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 15,
     fontWeight: "800",
-  },
-  notice: {
-    color: colors.muted,
-    fontSize: 15,
-    fontWeight: "700",
   },
 });

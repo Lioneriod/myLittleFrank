@@ -1,29 +1,36 @@
-import { networkInterfaces } from "node:os";
 import { createApp } from "./app";
-import { env } from "./env";
-import { admin } from "./supabase";
+import { checkDatabase, createPgDatabase } from "./db";
+import { loadEnvFile, readEnv } from "./env";
+import { expoPushSender } from "./services/push";
 
-function lanAddresses(): string[] {
-  return Object.values(networkInterfaces())
-    .flat()
-    .filter((address) => address?.family === "IPv4" && !address.internal)
-    .map((address) => address!.address);
+async function main() {
+  loadEnvFile(".env");
+  const env = readEnv();
+
+  const db = createPgDatabase(env.databaseUrl, env.databaseSsl);
+  await checkDatabase(db);
+
+  const app = createApp({
+    db,
+    sendPush: expoPushSender(env.expoAccessToken),
+    corsOrigins: env.corsOrigins,
+    logRequests: true,
+  });
+
+  const server = app.listen(env.port, () => {
+    console.log(`API do My Little Frank rodando na porta ${env.port}`);
+  });
+
+  const shutdown = () => {
+    server.close(() => {
+      db.close().finally(() => process.exit(0));
+    });
+  };
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 }
 
-const { error: databaseError } = await admin.from("monsters").select("id").limit(1);
-if (databaseError) {
-  console.error(
-    `Não foi possível ler o banco em ${env.supabaseUrl}. Confira SUPABASE_URL e SUPABASE_SECRET_KEY no arquivo backend/.env.`,
-  );
-  console.error(databaseError.message);
+main().catch((error: unknown) => {
+  console.error("Não foi possível iniciar a API:", error instanceof Error ? error.message : error);
   process.exit(1);
-}
-
-createApp().listen(env.port, "0.0.0.0", (error?: Error) => {
-  if (error) throw error;
-  console.log(`API do My Little Frank rodando em http://localhost:${env.port}`);
-  for (const address of lanAddresses()) {
-    console.log(`No celular, na mesma rede: http://${address}:${env.port}`);
-  }
-  console.log(`Banco de dados: ${env.supabaseUrl}`);
 });

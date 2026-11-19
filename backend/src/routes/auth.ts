@@ -1,49 +1,42 @@
-import { Router } from "express";
-import { HttpError, fail } from "../errors";
-import { isRejectedByAuth, requireUser, toApiSession, toHttpError } from "../auth";
-import { admin, authClient } from "../supabase";
-import { bodyOf } from "../validation";
+import { Router, type RequestHandler } from "express";
+import type { Database } from "../db";
+import { currentToken, currentUser } from "../auth/middleware";
+import { revokeToken } from "../auth/tokens";
+import { RateLimiter } from "../rateLimiter";
+import { login, register } from "../services/accounts";
+import { bodyOf, stringOf } from "../validation";
 
-export const authRouter = Router();
+const LOGIN_LIMIT = 10;
+const LOGIN_WINDOW_MS = 5 * 60_000;
+const REGISTER_LIMIT = 20;
+const REGISTER_WINDOW_MS = 10 * 60_000;
 
-function credentialsOf(body: Record<string, unknown>) {
-  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-  const password = typeof body.password === "string" ? body.password : "";
-  if (!email || !password) fail("missing_credentials");
-  return { email, password };
-}
+export function authRoutes(db: Database, auth: RequestHandler): Router {
+  const router = Router();
+  const loginLimiter = new RateLimiter(LOGIN_LIMIT, LOGIN_WINDOW_MS);
+  const registerLimiter = new RateLimiter(REGISTER_LIMIT, REGISTER_WINDOW_MS);
 
-authRouter.post("/signup", async (req, res) => {
-  const { data, error } = await authClient().auth.signUp(credentialsOf(bodyOf(req)));
-  if (error) throw toHttpError(error);
-  if (data.user?.identities?.length === 0) fail("user_already_exists");
-
-  res.status(201).json({
-    session: data.session ? toApiSession(data.session) : null,
-    confirmation_required: !data.session,
+  router.post("/register", async (req, res) => {
+    const body = bodyOf(req);
+    registerLimiter.check(req.ip ?? "");
+    res.status(201).json(await register(db, stringOf(body, "email"), stringOf(body, "password")));
   });
-});
 
-authRouter.post("/login", async (req, res) => {
-  const { data, error } = await authClient().auth.signInWithPassword(credentialsOf(bodyOf(req)));
-  if (error) throw toHttpError(error);
-  res.json({ session: toApiSession(data.session) });
-});
+  router.post("/login", async (req, res) => {
+    const body = bodyOf(req);
+    const email = stringOf(body, "email");
+    loginLimiter.check(`${req.ip}:${email.trim().toLowerCase()}`);
+    res.json(await login(db, email, stringOf(body, "password")));
+  });
 
-authRouter.post("/refresh", async (req, res) => {
-  const refreshToken = bodyOf(req).refresh_token;
-  if (typeof refreshToken !== "string" || !refreshToken) fail("not_authenticated");
+  router.get("/me", auth, (req, res) => {
+    res.json({ user: currentUser(req) });
+  });
 
-  const { data, error } = await authClient().auth.refreshSession({ refresh_token: refreshToken });
-  if (error) {
-    throw isRejectedByAuth(error) ? new HttpError("not_authenticated") : toHttpError(error);
-  }
-  if (!data.session) fail("not_authenticated");
-  res.json({ session: toApiSession(data.session) });
-});
+  router.post("/logout", auth, async (req, res) => {
+    await revokeToken(db, currentToken(req));
+    res.status(204).end();
+  });
 
-authRouter.post("/logout", requireUser, async (req, res) => {
-  const { error } = await admin.auth.admin.signOut(req.accessToken as string);
-  if (error && !isRejectedByAuth(error)) throw toHttpError(error);
-  res.status(204).end();
-});
+  return router;
+}

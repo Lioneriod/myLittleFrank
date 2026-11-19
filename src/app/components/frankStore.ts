@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { ApiError, getMonster, updateMonster } from "../../lib/api";
+import { ApiError, getMonster, updateMonster } from "../../api";
 import {
   DEFAULT_FRANK_PARTS,
   FrankPartKey,

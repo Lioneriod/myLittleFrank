@@ -1,11 +1,16 @@
-import { Router } from "express";
-import { currentUser, requireUser } from "../auth";
-import { deleteAccount } from "../services/account";
+import { Router, type RequestHandler } from "express";
+import type { Database } from "../db";
+import { currentUser } from "../auth/middleware";
+import { deleteAccount } from "../services/accounts";
 
-export const accountRouter = Router();
+export function accountRoutes(db: Database, auth: RequestHandler): Router {
+  const router = Router();
+  router.use(auth);
 
-accountRouter.use(requireUser);
+  router.delete("/", async (req, res) => {
+    await deleteAccount(db, currentUser(req).id);
+    res.status(204).end();
+  });
 
-accountRouter.delete("/", async (req, res) => {
-  res.json({ ok: true, ...(await deleteAccount(currentUser(req).id)) });
-});
+  return router;
+}

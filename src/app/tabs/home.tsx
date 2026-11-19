@@ -23,7 +23,7 @@ import {
   friendlyError,
   getHistory,
   getPairing,
-} from "@/src/lib/api";
+} from "@/src/api";
 import { colors } from "../../theme";
 
 const HOME_ART: SceneArt = {

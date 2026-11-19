@@ -1,7 +1,7 @@
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import * as api from "./api";
+import * as api from "../api";
 
 let registeredToken: string | null = null;
 

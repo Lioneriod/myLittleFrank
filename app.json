@@ -40,14 +40,7 @@
       "expo-web-browser",
       "expo-asset",
       "expo-notifications",
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "usesCleartextTraffic": true
-          }
-        }
-      ]
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
